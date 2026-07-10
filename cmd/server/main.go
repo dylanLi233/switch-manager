@@ -37,14 +37,15 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "logger error: %v\n", err)
 		return 1
 	}
-	application, err := app.New(cfg, logger)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	application, err := app.New(ctx, cfg, logger)
 	if err != nil {
 		logger.Error("application bootstrap failed", "error", err)
 		return 1
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	defer application.Close()
 
 	if err := application.Run(ctx); err != nil {
 		logger.Error("application stopped with error", "error", err)
