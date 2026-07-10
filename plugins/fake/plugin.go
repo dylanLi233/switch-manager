@@ -30,13 +30,13 @@ func (p *Plugin) Metadata() pluginapi.Metadata {
 		Name:          "fake-" + strings.ToLower(string(p.vendor)),
 		Vendor:        p.vendor,
 		PluginVersion: pluginapi.Version{Major: 1, Minor: 0, Patch: 0},
-		SDKVersion:    pluginapi.CurrentSDKVersion,
+		SDKVersion:    pluginapi.CurrentSDKVersion(),
 		Operations:    []pluginapi.OperationName{OperationEchoQuery, OperationEchoConfig},
 	}
 }
 
 func (p *Plugin) Detect(ctx context.Context, session pluginapi.CLISession) (pluginapi.DeviceInfo, error) {
-	if session == nil {
+	if pluginapi.IsNilCLISession(session) {
 		return pluginapi.DeviceInfo{}, pluginapi.NewError(pluginapi.ErrorInvalidRequest, "CLI session is required")
 	}
 	output, err := session.Execute(ctx, pluginapi.PlannedCommand{Sequence: 1, Text: "fake.detect", Timeout: time.Second})
