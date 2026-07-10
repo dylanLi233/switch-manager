@@ -11,15 +11,37 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: switch_manager
+          POSTGRES_PASSWORD: switch_manager
+          POSTGRES_DB: switch_manager_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U switch_manager -d switch_manager_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_DSN: postgres://switch_manager:switch_manager@localhost:5432/switch_manager_test?sslmode=disable
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23.x'
           cache: true
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
       - name: Unit tests
         run: go test ./...
       - name: Race tests
         run: go test -race ./...
       - name: Vet
         run: go vet ./...
+      - name: Migration integration tests
+        run: bash ./scripts/test-migrations.sh
