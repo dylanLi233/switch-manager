@@ -41,7 +41,7 @@ func build(code Code, message string, cause error) *Error {
 			cause:      unknownCause,
 		}
 	}
-	if strings.TrimSpace(message) == "" || code == CodeInternalError {
+	if strings.TrimSpace(message) == "" || def.HTTPStatus >= 500 {
 		message = def.DefaultMessage
 	}
 	return &Error{
@@ -103,10 +103,10 @@ func Normalize(err error) *Error {
 		}
 		clone := *app
 		clone.HTTPStatus = def.HTTPStatus
-		if strings.TrimSpace(clone.Message) == "" || clone.Code == CodeInternalError {
+		if strings.TrimSpace(clone.Message) == "" || def.HTTPStatus >= 500 {
 			clone.Message = def.DefaultMessage
 		}
-		if clone.Code == CodeInternalError {
+		if def.HTTPStatus >= 500 {
 			clone.Details = nil
 		}
 		return &clone
