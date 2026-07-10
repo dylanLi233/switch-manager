@@ -69,14 +69,14 @@ func TestWithDetailsDoesNotMutateOriginal(t *testing.T) {
 	}
 }
 
-func TestInternalErrorAlwaysUsesGenericMessage(t *testing.T) {
+func TestServerErrorsAlwaysUseGenericMessage(t *testing.T) {
 	t.Parallel()
-	err := New(CodeInternalError, "database password leaked")
-	if err.Message != "internal server error" {
+	err := New(CodeDatabaseUnavailable, "database password leaked")
+	if err.Message != "database is unavailable" {
 		t.Fatalf("message = %q", err.Message)
 	}
 	normalized := Normalize(err.WithDetails(map[string]string{"password": "secret"}))
 	if normalized.Details != nil {
-		t.Fatal("internal error details must be removed")
+		t.Fatal("server error details must be removed")
 	}
 }
