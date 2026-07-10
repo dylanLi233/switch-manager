@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/dylanLi233/switch-manager/internal/domain/auth"
+	"github.com/dylanLi233/switch-manager/internal/health"
 )
 
 type authenticatorStub struct {
@@ -52,7 +54,7 @@ func TestAuthenticationMiddlewareRejectsInvalidHeader(t *testing.T) {
 func TestAuthenticatedRouterMe(t *testing.T) {
 	t.Parallel()
 	stub := &authenticatorStub{principal: testPrincipal()}
-	router := NewAuthenticatedRouter(newHealthyHandler(), 1024, stub)
+	router := NewAuthenticatedRouter(health.NewHandler(time.Second), 1024, stub)
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
 	request.Header.Set("Authorization", "Bearer signed-token")
 	recorder := httptest.NewRecorder()
@@ -63,7 +65,7 @@ func TestAuthenticatedRouterMe(t *testing.T) {
 	var response struct {
 		Success bool `json:"success"`
 		Data struct {
-			UserID string `json:"user_id"`
+			UserID string      `json:"user_id"`
 			Roles  []auth.Role `json:"roles"`
 		} `json:"data"`
 	}
