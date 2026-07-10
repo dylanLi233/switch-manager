@@ -37,6 +37,8 @@ func mapDatabaseError(err error, notFound apperror.Code, operation string) error
 			return apperror.Wrap(apperror.CodeValidationError, "", err)
 		case "40001", "40P01", "08000", "08003", "08006", "08001", "08004":
 			return apperror.Wrap(apperror.CodeDatabaseUnavailable, "", err)
+		default:
+			return apperror.Wrap(apperror.CodeInternalError, "", err)
 		}
 	}
 	_ = operation // reserved for trusted structured logging at the application edge.
