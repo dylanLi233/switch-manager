@@ -165,11 +165,11 @@ func (s *Session) Execute(ctx context.Context, command pluginapi.PlannedCommand)
 	if err := ctx.Err(); err != nil {
 		return pluginapi.CommandOutput{}, err
 	}
-
 	step, err := s.consume(command)
 	if err != nil {
 		return pluginapi.CommandOutput{}, err
 	}
+
 	startedAt := s.now().UTC()
 	output, errorCode, executeErr := s.runStep(ctx, command, step)
 	finishedAt := s.now().UTC()
@@ -202,7 +202,7 @@ func (s *Session) consume(command pluginapi.PlannedCommand) (Step, error) {
 	if step.Expect != command {
 		err := newError(
 			ErrorUnexpectedCommand,
-			fmt.Sprintf("step %d expected %+v but received %+v", s.next+1, step.Expect, command),
+			fmt.Sprintf("step %d expected %s but received %s", s.next+1, describeCommand(step.Expect), describeCommand(command)),
 			nil,
 		)
 		s.violations = append(s.violations, err)
@@ -210,6 +210,17 @@ func (s *Session) consume(command pluginapi.PlannedCommand) (Step, error) {
 	}
 	s.next++
 	return step, nil
+}
+
+func describeCommand(command pluginapi.PlannedCommand) string {
+	text := command.Text
+	if command.Sensitive {
+		text = "<redacted>"
+	}
+	return fmt.Sprintf(
+		"{sequence=%d text=%q sensitive=%t expected_mode=%q timeout=%s}",
+		command.Sequence, text, command.Sensitive, command.ExpectedMode, command.Timeout,
+	)
 }
 
 func (s *Session) runStep(ctx context.Context, command pluginapi.PlannedCommand, step Step) (pluginapi.CommandOutput, string, error) {
@@ -229,23 +240,27 @@ func (s *Session) runStep(ctx context.Context, command pluginapi.PlannedCommand,
 		return pluginapi.CommandOutput{}, contextErrorCode(err), err
 	}
 
+	output := s.limitOutput(step.Output)
 	if step.Disconnect {
-		return pluginapi.CommandOutput{}, "DEVICE_UNREACHABLE", newError(ErrorSessionClosed, "scripted device disconnected", nil)
+		return output, "DEVICE_UNREACHABLE", newError(ErrorSessionClosed, "scripted device disconnected", nil)
 	}
 	if step.Failure != nil {
 		code := strings.TrimSpace(step.ErrorCode)
 		if code == "" {
 			code = "COMMAND_REJECTED"
 		}
-		return pluginapi.CommandOutput{}, code, newError(ErrorInjectedFailure, "scripted command failed", step.Failure)
+		return output, code, newError(ErrorInjectedFailure, "scripted command failed", step.Failure)
 	}
+	return output, "", nil
+}
 
-	data := []byte(step.Output)
+func (s *Session) limitOutput(value string) pluginapi.CommandOutput {
+	data := []byte(value)
 	truncated := len(data) > s.maxOutputBytes
 	if truncated {
 		data = data[:s.maxOutputBytes]
 	}
-	return pluginapi.CommandOutput{Output: string(data), OutputTruncated: truncated}, "", nil
+	return pluginapi.CommandOutput{Output: string(data), OutputTruncated: truncated}
 }
 
 func contextErrorCode(err error) string {
