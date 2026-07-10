@@ -8,8 +8,13 @@ import (
 	"strings"
 )
 
-// CurrentSDKVersion is the plugin contract implemented by this binary.
-var CurrentSDKVersion = Version{Major: 1, Minor: 0, Patch: 0}
+// CurrentSDKVersionString is the immutable SDK version implemented by this binary.
+const CurrentSDKVersionString = "1.0.0"
+
+// CurrentSDKVersion returns a fresh value so plugins cannot mutate runtime compatibility state.
+func CurrentSDKVersion() Version {
+	return Version{Major: 1, Minor: 0, Patch: 0}
+}
 
 // Version is a strict semantic version without prerelease metadata.
 type Version struct {
