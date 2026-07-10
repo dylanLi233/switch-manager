@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 
 	"github.com/dylanLi233/switch-manager/internal/authn"
 	"github.com/dylanLi233/switch-manager/internal/config"
