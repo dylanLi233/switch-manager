@@ -17,9 +17,9 @@ func planned(sequence int, text string, timeout time.Duration) pluginapi.Planned
 func waitUntilInUse(t *testing.T, session *Session) {
 	t.Helper()
 	deadline := time.Now().Add(time.Second)
-	for !session.inUse.Load() {
+	for !session.inUse.Load() || session.Remaining() != 0 {
 		if time.Now().After(deadline) {
-			t.Fatal("session did not begin execution")
+			t.Fatal("session did not enter scripted execution")
 		}
 		time.Sleep(time.Millisecond)
 	}
