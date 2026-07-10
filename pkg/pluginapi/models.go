@@ -1,6 +1,7 @@
 package pluginapi
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -97,8 +98,11 @@ func (p ExecutionPlan) Validate() error {
 	if err := p.Vendor.Validate(); err != nil {
 		return err
 	}
-	if strings.TrimSpace(p.PluginName) == "" || strings.TrimSpace(p.PluginVersion) == "" {
-		return errors.New("plugin name and version are required")
+	if !pluginNamePattern.MatchString(p.PluginName) {
+		return fmt.Errorf("plugin name %q must match %s", p.PluginName, pluginNamePattern)
+	}
+	if _, err := ParseVersion(p.PluginVersion); err != nil {
+		return fmt.Errorf("validate plan plugin version: %w", err)
 	}
 	if err := ValidateOperationName(p.Operation); err != nil {
 		return err
@@ -121,6 +125,9 @@ func (p ExecutionPlan) Validate() error {
 		}
 		if strings.TrimSpace(command.Text) == "" {
 			return fmt.Errorf("command %d text is required", command.Sequence)
+		}
+		if strings.ContainsAny(command.Text, "\r\n") {
+			return fmt.Errorf("command %d must be a single line", command.Sequence)
 		}
 		if command.Timeout <= 0 {
 			return fmt.Errorf("command %d timeout must be positive", command.Sequence)
@@ -186,6 +193,11 @@ func (r OperationResult) Validate() error {
 	case ResultPartialSuccess:
 		if strings.TrimSpace(r.ErrorCode) == "" || len(r.Commands) == 0 {
 			return errors.New("partial result requires an error code and command outcomes")
+		}
+	}
+	if r.Data != nil {
+		if _, err := json.Marshal(r.Data); err != nil {
+			return fmt.Errorf("result data must be JSON-serializable: %w", err)
 		}
 	}
 	for index, command := range r.Commands {
