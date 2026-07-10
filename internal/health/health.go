@@ -59,11 +59,11 @@ func (h *Handler) Ready(w http.ResponseWriter, r *http.Request) {
 	failures := make(map[string]string)
 	for _, check := range h.checks {
 		if check == nil {
-			failures["unknown"] = "nil health check"
+			failures["unknown"] = "invalid"
 			continue
 		}
 		if err := check.Check(ctx); err != nil {
-			failures[check.Name()] = err.Error()
+			failures[check.Name()] = "unavailable"
 		}
 	}
 	if len(failures) > 0 {
