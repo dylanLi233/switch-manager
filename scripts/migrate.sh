@@ -60,15 +60,30 @@ apply_up() {
   fi
   mapfile -t files < <(printf '%s\n' "${files[@]}" | sort)
 
+  declare -A seen_versions=()
   for file in "${files[@]}"; do
     validate_filename "${file}"
+    base="$(basename "${file}")"
+    version="${base%%_*}"
+    if [[ -n "${seen_versions[$version]:-}" ]]; then
+      echo "duplicate migration version ${version}: ${seen_versions[$version]} and ${base}" >&2
+      exit 1
+    fi
+    seen_versions[$version]="${base}"
+  done
+
+  for file in "${files[@]}"; do
     base="$(basename "${file}")"
     version="${base%%_*}"
     name="${base#*_}"
     name="${name%.up.sql}"
     version_num=$((10#${version}))
-    applied="$("${psql_cmd[@]}" -Atc "SELECT 1 FROM schema_migrations WHERE version = ${version_num}")"
-    if [[ "${applied}" == "1" ]]; then
+    applied="$("${psql_cmd[@]}" -Atc "SELECT name FROM schema_migrations WHERE version = ${version_num}")"
+    if [[ -n "${applied}" ]]; then
+      if [[ "${applied}" != "${name}" ]]; then
+        echo "applied migration ${version} is named ${applied}, but file is named ${name}" >&2
+        exit 1
+      fi
       echo "skip ${base}"
       continue
     fi
