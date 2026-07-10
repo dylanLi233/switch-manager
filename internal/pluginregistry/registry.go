@@ -38,7 +38,7 @@ func New(runtimeSDK pluginapi.Version) (*Registry, error) {
 }
 
 func NewCurrent() *Registry {
-	registry, err := New(pluginapi.CurrentSDKVersion)
+	registry, err := New(pluginapi.CurrentSDKVersion())
 	if err != nil {
 		panic(err)
 	}
@@ -124,6 +124,9 @@ func (r *Registry) LookupCapability(
 	r.mu.RUnlock()
 	if !ok {
 		return pluginapi.Capability{}, fmt.Errorf("%w: %s", ErrPluginNotFound, vendor)
+	}
+	if err := info.Validate(); err != nil {
+		return pluginapi.Capability{}, fmt.Errorf("validate device information: %w", err)
 	}
 	if info.Vendor != vendor {
 		return pluginapi.Capability{}, fmt.Errorf("device vendor %s does not match requested vendor %s", info.Vendor, vendor)
