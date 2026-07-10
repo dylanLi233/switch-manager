@@ -2,6 +2,7 @@ package pluginapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -26,6 +27,9 @@ type Metadata struct {
 
 // Validate verifies metadata against the running SDK.
 func (m Metadata) Validate(runtime Version) error {
+	if err := runtime.Validate(); err != nil {
+		return fmt.Errorf("validate runtime SDK version: %w", err)
+	}
 	if !pluginNamePattern.MatchString(m.Name) {
 		return fmt.Errorf("plugin name %q must match %s", m.Name, pluginNamePattern)
 	}
@@ -217,6 +221,11 @@ func (r PlanRequest) Validate() error {
 	}
 	if r.SaveConfig && r.Class != ClassConfig {
 		return errors.New("save_config is only valid for configuration plans")
+	}
+	if r.Parameters != nil {
+		if _, err := json.Marshal(r.Parameters); err != nil {
+			return fmt.Errorf("plan parameters must be JSON-serializable: %w", err)
+		}
 	}
 	return nil
 }
