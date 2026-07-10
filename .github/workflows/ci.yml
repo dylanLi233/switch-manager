@@ -37,6 +37,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y postgresql-client
+      - name: Resolve Go modules
+        run: go mod tidy
+      - name: Upload Go module files
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-module-files
+          path: |
+            go.mod
+            go.sum
       - name: Unit tests
         run: go test ./...
       - name: Race tests
