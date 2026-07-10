@@ -48,9 +48,15 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		checks = append(checks, health.CheckFunc{CheckName: "database", Fn: store.Ping})
 	}
 
-	healthHandler := health.NewHandler(cfg.Server.ReadTimeout, checks...)
-	var router http.Handler
+	var authentication *authn.Service
 	if cfg.Authentication.Enabled {
+		accessRepository := app.store.Repositories().Access
+		if err := accessRepository.CheckReady(ctx); err != nil {
+			app.Close()
+			return nil, fmt.Errorf("verify RBAC schema: %w", err)
+		}
+		checks = append(checks, health.CheckFunc{CheckName: "authorization_schema", Fn: accessRepository.CheckReady})
+
 		verifier, err := authn.NewJWTVerifierFromFile(cfg.Authentication.PublicKeyFile, authn.JWTConfig{
 			Issuer: cfg.Authentication.Issuer, Audience: cfg.Authentication.Audience,
 			KeyID: cfg.Authentication.KeyID, ClockSkew: cfg.Authentication.ClockSkew,
@@ -61,11 +67,16 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 			app.Close()
 			return nil, fmt.Errorf("initialize JWT verifier: %w", err)
 		}
-		authentication, err := authn.NewService(verifier, app.store.Repositories().Access)
+		authentication, err = authn.NewService(verifier, accessRepository)
 		if err != nil {
 			app.Close()
 			return nil, fmt.Errorf("initialize authentication service: %w", err)
 		}
+	}
+
+	healthHandler := health.NewHandler(cfg.Server.ReadTimeout, checks...)
+	var router http.Handler
+	if authentication != nil {
 		router = httpserver.NewAuthenticatedRouter(healthHandler, cfg.Server.MaxRequestBytes, authentication)
 	} else {
 		router = httpserver.NewRouter(healthHandler, cfg.Server.MaxRequestBytes)
