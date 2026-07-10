@@ -15,6 +15,29 @@ import (
 // AccessRepository resolves database-backed principals and permission bindings.
 type AccessRepository struct{ q DBTX }
 
+// CheckReady verifies that all RBAC tables required by authentication exist.
+func (r *AccessRepository) CheckReady(ctx context.Context) error {
+	if r == nil || r.q == nil {
+		return apperror.Wrap(apperror.CodeDatabaseUnavailable, "", errors.New("access repository is not initialized"))
+	}
+	var ready bool
+	err := r.q.QueryRow(ctx, `
+		SELECT
+			to_regclass('public.users') IS NOT NULL
+			AND to_regclass('public.roles') IS NOT NULL
+			AND to_regclass('public.permissions') IS NOT NULL
+			AND to_regclass('public.role_permissions') IS NOT NULL
+			AND to_regclass('public.user_role_bindings') IS NOT NULL`,
+	).Scan(&ready)
+	if err != nil {
+		return mapDatabaseError(err, "", "check RBAC schema")
+	}
+	if !ready {
+		return apperror.Wrap(apperror.CodeDatabaseUnavailable, "", errors.New("RBAC schema is not ready"))
+	}
+	return nil
+}
+
 // ResolveBySubject loads one active user and all role bindings from PostgreSQL.
 func (r *AccessRepository) ResolveBySubject(ctx context.Context, subject string) (auth.Principal, error) {
 	if strings.TrimSpace(subject) == "" {
