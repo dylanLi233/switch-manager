@@ -7,13 +7,13 @@ import (
 	"github.com/dylanLi233/switch-manager/internal/health"
 )
 
-// NewRouter builds the TASK-001 HTTP routes.
+// NewRouter builds the current HTTP routes and installs cross-cutting request metadata.
 func NewRouter(healthHandler *health.Handler, maxRequestBytes int64) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", healthHandler.Live)
 	mux.HandleFunc("GET /health/ready", healthHandler.Ready)
 
-	return limitRequestBody(maxRequestBytes, mux)
+	return withRequestID(limitRequestBody(maxRequestBytes, mux))
 }
 
 func limitRequestBody(maxBytes int64, next http.Handler) http.Handler {
