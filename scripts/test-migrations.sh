@@ -31,7 +31,7 @@ expect_failure() {
   fi
 }
 
-bash "${ROOT_DIR}/scripts/migrate.sh" down all >/dev/null || true
+bash "${ROOT_DIR}/scripts/migrate.sh" down all >/dev/null
 bash "${ROOT_DIR}/scripts/migrate.sh" up
 
 assert_eq "3" "$(scalar "SELECT count(*) FROM schema_migrations")" "migration count"
@@ -61,7 +61,7 @@ task_id="$(scalar "INSERT INTO tasks(task_type, operation, target_type, target_i
 expect_failure "duplicate actor idempotency key" "INSERT INTO tasks(task_type, operation, target_type, target_id, status, execution_mode, created_by, idempotency_key) VALUES ('OPERATION', 'vlan.create', 'switch', 'sw-2', 'PENDING', 'SYNC', '${user_id}', 'idem-1')"
 
 "${psql_cmd[@]}" -c "INSERT INTO audit_logs(request_id, task_id, actor_user_id, actor_username, actor_role, action, target_type, target_id, status) VALUES ('req-1', '${task_id}', '${user_id}', 'migration-test', 'ADMIN', 'vlan.create', 'switch', 'sw-1', 'PENDING')" >/dev/null
-expect_failure "historical audit prevents user deletion" "DELETE FROM users WHERE id = '${user_id}'"
+expect_failure "historical audit prevents task deletion" "DELETE FROM tasks WHERE id = '${task_id}'"
 
 bash "${ROOT_DIR}/scripts/migrate.sh" up >/dev/null
 assert_eq "3" "$(scalar "SELECT count(*) FROM schema_migrations")" "idempotent up"
