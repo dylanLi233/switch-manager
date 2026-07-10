@@ -28,6 +28,9 @@ func TestAccessRepositoryIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
+	if err := store.Repositories().Access.CheckReady(ctx); err != nil {
+		t.Fatalf("CheckReady() error = %v", err)
+	}
 
 	const activeUserID = "00000000-0000-0000-0000-000000000201"
 	const disabledUserID = "00000000-0000-0000-0000-000000000202"
