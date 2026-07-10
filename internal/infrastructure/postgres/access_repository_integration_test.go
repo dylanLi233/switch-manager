@@ -39,7 +39,10 @@ func TestAccessRepositoryIntegration(t *testing.T) {
 	}
 	if _, err := store.pool.Exec(ctx, `
 		INSERT INTO user_role_bindings(user_id, role_id, scope_type, scope_id)
-		SELECT $1::uuid, id, 'GLOBAL', '' FROM roles WHERE name='VIEWER';
+		SELECT $1::uuid, id, 'GLOBAL', '' FROM roles WHERE name='VIEWER'`, activeUserID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.pool.Exec(ctx, `
 		INSERT INTO user_role_bindings(user_id, role_id, scope_type, scope_id)
 		SELECT $1::uuid, id, 'SPECIFIC_RESOURCE', 'switch-1' FROM roles WHERE name='ADMIN'`, activeUserID); err != nil {
 		t.Fatal(err)
