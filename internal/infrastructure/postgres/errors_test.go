@@ -22,6 +22,7 @@ func TestMapDatabaseError(t *testing.T) {
 		{"idempotency", &pgconn.PgError{Code: "23505", ConstraintName: "tasks_actor_idempotency_uq"}, apperror.CodeIdempotencyConflict},
 		{"check", &pgconn.PgError{Code: "23514"}, apperror.CodeValidationError},
 		{"deadlock", &pgconn.PgError{Code: "40P01"}, apperror.CodeDatabaseUnavailable},
+		{"SQL bug", &pgconn.PgError{Code: "42702"}, apperror.CodeInternalError},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
