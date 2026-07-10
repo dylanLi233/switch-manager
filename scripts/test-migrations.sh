@@ -31,6 +31,14 @@ expect_failure() {
   fi
 }
 
+assert_migration_command_fails() {
+  local label="$1" migrations_dir="$2"
+  if MIGRATIONS_DIR="${migrations_dir}" bash "${ROOT_DIR}/scripts/migrate.sh" up >/dev/null 2>&1; then
+    echo "expected migration runner failure: ${label}" >&2
+    exit 1
+  fi
+}
+
 bash "${ROOT_DIR}/scripts/migrate.sh" down all >/dev/null
 bash "${ROOT_DIR}/scripts/migrate.sh" up
 
@@ -40,6 +48,18 @@ assert_eq "14" "$(scalar "SELECT count(*) FROM permissions")" "permission seed c
 assert_eq "14" "$(scalar "SELECT count(*) FROM role_permissions rp JOIN roles r ON r.id = rp.role_id WHERE r.name = 'ADMIN'")" "admin permissions"
 assert_eq "4" "$(scalar "SELECT count(*) FROM role_permissions rp JOIN roles r ON r.id = rp.role_id WHERE r.name = 'VIEWER'")" "viewer permissions"
 assert_eq "4" "$(scalar "SELECT count(*) FROM role_permissions rp JOIN roles r ON r.id = rp.role_id WHERE r.name = 'AUDITOR'")" "auditor permissions"
+
+runner_test_dir="$(mktemp -d)"
+trap 'rm -rf "${runner_test_dir}"' EXIT
+printf 'SELECT 1;\n' > "${runner_test_dir}/000010_first.up.sql"
+printf 'SELECT 1;\n' > "${runner_test_dir}/000010_second.up.sql"
+assert_migration_command_fails "duplicate migration versions" "${runner_test_dir}"
+rm -rf "${runner_test_dir}"
+runner_test_dir="$(mktemp -d)"
+printf 'SELECT 1;\n' > "${runner_test_dir}/000001_renamed.up.sql"
+assert_migration_command_fails "renamed applied migration" "${runner_test_dir}"
+rm -rf "${runner_test_dir}"
+trap - EXIT
 
 user_id="$(scalar "INSERT INTO users(external_subject, username) VALUES ('migration-test-user', 'migration-test') RETURNING id")"
 admin_role_id="$(scalar "SELECT id FROM roles WHERE name = 'ADMIN'")"
