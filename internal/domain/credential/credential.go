@@ -65,6 +65,9 @@ func (c Credential) Validate() error {
 		if len(c.EncryptedPrivateKey) != 0 {
 			return errors.New("password credential cannot contain a private key")
 		}
+		if len(c.EncryptedPassphrase) != 0 {
+			return errors.New("password credential cannot contain a private key passphrase")
+		}
 	case TypeSSHPrivateKey:
 		if len(c.EncryptedPrivateKey) == 0 {
 			return errors.New("encrypted private key is required")

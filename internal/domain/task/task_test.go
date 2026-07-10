@@ -85,6 +85,8 @@ func TestAggregateStatus(t *testing.T) {
 	}{
 		{[]Status{StatusSuccess, StatusSuccess}, StatusSuccess},
 		{[]Status{StatusFailed, StatusInterrupted}, StatusFailed},
+		{[]Status{StatusPartialSuccess, StatusPartialSuccess}, StatusPartialSuccess},
+		{[]Status{StatusPartialSuccess, StatusFailed}, StatusPartialSuccess},
 		{[]Status{StatusCancelled, StatusCancelled}, StatusCancelled},
 		{[]Status{StatusSuccess, StatusFailed}, StatusPartialSuccess},
 		{[]Status{StatusSuccess, StatusRunning}, StatusRunning},
@@ -98,5 +100,34 @@ func TestAggregateStatus(t *testing.T) {
 		if got != tc.want {
 			t.Fatalf("AggregateStatus(%v) = %s, want %s", tc.children, got, tc.want)
 		}
+	}
+}
+
+func TestTaskValidateStateInvariants(t *testing.T) {
+	t.Parallel()
+
+	partial := baseTask()
+	partial.Status = StatusPartialSuccess
+	started := partial.CreatedAt.Add(time.Second)
+	finished := started.Add(time.Second)
+	partial.StartedAt = &started
+	partial.FinishedAt = &finished
+	if err := partial.Validate(); err == nil {
+		t.Fatal("expected partial success to require an error code")
+	}
+
+	running := baseTask()
+	running.Status = StatusRunning
+	running.StartedAt = &started
+	running.FinishedAt = &finished
+	if err := running.Validate(); err == nil {
+		t.Fatal("expected running task with finish time to fail")
+	}
+
+	queued := baseTask()
+	queued.Status = StatusQueued
+	queued.StartedAt = &started
+	if err := queued.Validate(); err == nil {
+		t.Fatal("expected queued task with start time to fail")
 	}
 }

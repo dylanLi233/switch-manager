@@ -26,6 +26,7 @@ func TestCredentialValidate(t *testing.T) {
 		{ID: "cred-1", Name: "bad", Type: Type("TOKEN"), Username: "admin", EncryptedSecret: []byte("x"), KeyVersion: "v1"},
 		{ID: "cred-1", Name: "bad", Type: TypePassword, Username: "", EncryptedSecret: []byte("x"), KeyVersion: "v1"},
 		{ID: "cred-1", Name: "bad", Type: TypePassword, Username: "admin", EncryptedSecret: []byte("x")},
+		{ID: "cred-1", Name: "bad", Type: TypePassword, Username: "admin", EncryptedSecret: []byte("x"), EncryptedPassphrase: []byte("y"), KeyVersion: "v1"},
 	}
 	for _, c := range invalid {
 		if err := c.Validate(); err == nil {

@@ -155,14 +155,20 @@ func (t Task) Validate() error {
 			return errors.New("task finish time cannot precede start time")
 		}
 	}
+	if (t.Status == StatusPending || t.Status == StatusQueued) && t.StartedAt != nil {
+		return errors.New("pending or queued task cannot have a start time")
+	}
+	if !t.Status.Terminal() && t.FinishedAt != nil {
+		return errors.New("non-terminal task cannot have a finish time")
+	}
 	if t.Status == StatusRunning && t.StartedAt == nil {
 		return errors.New("running task requires a start time")
 	}
 	if t.Status.Terminal() && t.FinishedAt == nil {
 		return errors.New("terminal task requires a finish time")
 	}
-	if t.Status == StatusFailed && strings.TrimSpace(t.ErrorCode) == "" {
-		return errors.New("failed task requires an error code")
+	if (t.Status == StatusFailed || t.Status == StatusPartialSuccess) && strings.TrimSpace(t.ErrorCode) == "" {
+		return fmt.Errorf("%s task requires an error code", t.Status)
 	}
 	if t.Status == StatusSuccess && t.ErrorCode != "" {
 		return errors.New("successful task cannot contain an error code")
@@ -253,7 +259,7 @@ func AggregateStatus(children []Status) (Status, error) {
 	if len(children) == 0 {
 		return "", errors.New("at least one child status is required")
 	}
-	var success, failed, cancelled, running, queued int
+	var success, partial, failed, cancelled, running, queued int
 	for _, child := range children {
 		if err := child.Validate(); err != nil {
 			return "", err
@@ -261,7 +267,9 @@ func AggregateStatus(children []Status) (Status, error) {
 		switch child {
 		case StatusSuccess:
 			success++
-		case StatusPartialSuccess, StatusFailed, StatusInterrupted:
+		case StatusPartialSuccess:
+			partial++
+		case StatusFailed, StatusInterrupted:
 			failed++
 		case StatusCancelled:
 			cancelled++
@@ -282,6 +290,9 @@ func AggregateStatus(children []Status) (Status, error) {
 	}
 	if failed == len(children) {
 		return StatusFailed, nil
+	}
+	if partial > 0 {
+		return StatusPartialSuccess, nil
 	}
 	if cancelled == len(children) {
 		return StatusCancelled, nil
