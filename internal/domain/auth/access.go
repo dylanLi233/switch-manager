@@ -28,18 +28,27 @@ const (
 	PermissionPluginManage          Permission = "plugin.manage"
 )
 
-var knownPermissions = map[Permission]struct{}{
-	PermissionDeviceRead: {}, PermissionDeviceManage: {}, PermissionCredentialManage: {},
-	PermissionOperationQuery: {}, PermissionOperationConfig: {}, PermissionOperationCustomRead: {},
-	PermissionOperationCustomConfig: {}, PermissionConfigBackup: {}, PermissionConfigRestore: {},
-	PermissionTaskRead: {}, PermissionTaskCancel: {}, PermissionAuditRead: {},
-	PermissionAuditExport: {}, PermissionPluginManage: {},
-}
-
-// Validate reports whether the permission is part of the V1 permission catalog.
+// Validate accepts the documented V1 permissions and future lowercase,
+// dot-separated permissions such as vm.network.configure.
 func (p Permission) Validate() error {
-	if _, ok := knownPermissions[p]; !ok {
-		return fmt.Errorf("unsupported permission %q", p)
+	value := string(p)
+	if value == "" || value != strings.TrimSpace(value) || len(value) > 128 {
+		return fmt.Errorf("invalid permission %q", p)
+	}
+	segments := strings.Split(value, ".")
+	if len(segments) < 2 {
+		return fmt.Errorf("permission %q must contain a namespace", p)
+	}
+	for _, segment := range segments {
+		if segment == "" {
+			return fmt.Errorf("permission %q contains an empty segment", p)
+		}
+		for _, char := range segment {
+			if (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '_' || char == '-' {
+				continue
+			}
+			return fmt.Errorf("permission %q contains an invalid character", p)
+		}
 	}
 	return nil
 }
@@ -58,8 +67,8 @@ const (
 
 // Scope is an exact authorization target. GLOBAL uses an empty ID.
 type Scope struct {
-	Type ScopeType
-	ID   string
+	Type ScopeType `json:"type"`
+	ID   string    `json:"id"`
 }
 
 // Validate enforces the same scope pair rules as PostgreSQL.
@@ -147,22 +156,58 @@ func (p Principal) Validate() error {
 	return nil
 }
 
-// Authorize returns the effective role that grants permission for target.
+// Authorize returns the deterministic effective role that grants permission.
+// Exact scope bindings take precedence over GLOBAL bindings.
 func (p Principal) Authorize(permission Permission, target Scope) (Role, bool) {
 	if p.Validate() != nil || permission.Validate() != nil || target.Validate() != nil {
 		return "", false
 	}
-	for _, binding := range p.Bindings {
-		if !binding.Scope.Covers(target) {
-			continue
-		}
-		for _, candidate := range binding.Permissions {
-			if candidate == permission {
-				return binding.Role, true
+	passes := []bool{true, false} // exact first, then GLOBAL fallback.
+	for _, exact := range passes {
+		bestRole := Role("")
+		bestRank := -1
+		for _, binding := range p.Bindings {
+			isExact := binding.Scope.Type == target.Type && binding.Scope.ID == target.ID
+			if exact && !isExact {
+				continue
 			}
+			if !exact && binding.Scope.Type != ScopeGlobal {
+				continue
+			}
+			if !bindingHasPermission(binding, permission) {
+				continue
+			}
+			if rank := roleRank(binding.Role); rank > bestRank {
+				bestRole, bestRank = binding.Role, rank
+			}
+		}
+		if bestRank >= 0 {
+			return bestRole, true
 		}
 	}
 	return "", false
+}
+
+func bindingHasPermission(binding Binding, permission Permission) bool {
+	for _, candidate := range binding.Permissions {
+		if candidate == permission {
+			return true
+		}
+	}
+	return false
+}
+
+func roleRank(role Role) int {
+	switch role {
+	case RoleAdmin:
+		return 3
+	case RoleAuditor:
+		return 2
+	case RoleViewer:
+		return 1
+	default:
+		return 0
+	}
 }
 
 // Roles returns stable, deduplicated role names for introspection responses.
