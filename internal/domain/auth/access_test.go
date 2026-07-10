@@ -20,6 +20,20 @@ func TestScopeCovers(t *testing.T) {
 	}
 }
 
+func TestPermissionValidationIsExtensible(t *testing.T) {
+	t.Parallel()
+	for _, permission := range []Permission{PermissionDeviceRead, "vm.network.configure", "resource-group.read_2"} {
+		if err := permission.Validate(); err != nil {
+			t.Fatalf("Validate(%q) error = %v", permission, err)
+		}
+	}
+	for _, permission := range []Permission{"", "device", "Device.Read", "device..read", "device/read", " device.read"} {
+		if err := permission.Validate(); err == nil {
+			t.Fatalf("Validate(%q) expected error", permission)
+		}
+	}
+}
+
 func TestPrincipalAuthorize(t *testing.T) {
 	t.Parallel()
 	principal := Principal{
@@ -37,6 +51,36 @@ func TestPrincipalAuthorize(t *testing.T) {
 	}
 	if _, ok := principal.Authorize(PermissionDeviceManage, Scope{Type: ScopeSpecificResource, ID: "switch-2"}); ok {
 		t.Fatal("unexpected authorization outside exact scope")
+	}
+}
+
+func TestPrincipalAuthorizePrefersExactScope(t *testing.T) {
+	t.Parallel()
+	principal := Principal{
+		UserID: "user-1", Subject: "subject-1", Username: "alice",
+		Bindings: []Binding{
+			{Role: RoleAdmin, Scope: Scope{Type: ScopeGlobal}, Permissions: []Permission{PermissionDeviceRead}},
+			{Role: RoleViewer, Scope: Scope{Type: ScopeSpecificResource, ID: "switch-1"}, Permissions: []Permission{PermissionDeviceRead}},
+		},
+	}
+	role, ok := principal.Authorize(PermissionDeviceRead, Scope{Type: ScopeSpecificResource, ID: "switch-1"})
+	if !ok || role != RoleViewer {
+		t.Fatalf("exact scope role = %q, %v; want VIEWER", role, ok)
+	}
+}
+
+func TestPrincipalAuthorizeUsesDeterministicRoleRank(t *testing.T) {
+	t.Parallel()
+	principal := Principal{
+		UserID: "user-1", Subject: "subject-1", Username: "alice",
+		Bindings: []Binding{
+			{Role: RoleViewer, Scope: Scope{Type: ScopeGlobal}, Permissions: []Permission{PermissionDeviceRead}},
+			{Role: RoleAdmin, Scope: Scope{Type: ScopeGlobal}, Permissions: []Permission{PermissionDeviceRead}},
+		},
+	}
+	role, ok := principal.Authorize(PermissionDeviceRead, Scope{Type: ScopeProject, ID: "project-1"})
+	if !ok || role != RoleAdmin {
+		t.Fatalf("effective role = %q, %v; want ADMIN", role, ok)
 	}
 }
 
