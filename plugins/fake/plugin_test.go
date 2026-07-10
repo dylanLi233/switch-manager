@@ -50,10 +50,7 @@ func TestFakePluginDetectBuildAndParse(t *testing.T) {
 	started := time.Now().UTC()
 	result, err := plugin.ParseResult(context.Background(), plan, pluginapi.Transcript{
 		StartedAt: started, FinishedAt: started.Add(time.Second),
-		Commands: []pluginapi.CommandRecord{{
-			Sequence: 1, Command: plan.Commands[0].Text, Output: "hello",
-			Succeeded: true, Duration: time.Millisecond,
-		}},
+		Commands: []pluginapi.CommandRecord{{Sequence: 1, Command: plan.Commands[0].Text, Output: "hello", Succeeded: true, Duration: time.Millisecond}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -68,7 +65,7 @@ func TestFakePluginUnknownModelBlocksConfig(t *testing.T) {
 	plugin, _ := New(pluginapi.VendorH3C)
 	_, err := plugin.BuildPlan(context.Background(), pluginapi.PlanRequest{
 		PlanID: "plan-1", DeviceID: "device-1",
-		Device: pluginapi.DeviceInfo{Vendor: pluginapi.VendorH3C, Model: "UNKNOWN"},
+		Device:    pluginapi.DeviceInfo{Vendor: pluginapi.VendorH3C, Model: "UNKNOWN"},
 		Operation: OperationEchoConfig, Class: pluginapi.ClassConfig,
 		Parameters: map[string]any{"message": "hello"},
 	})
@@ -87,5 +84,15 @@ func TestFakePluginDetectionFailurePreservesCause(t *testing.T) {
 	}
 	if err.Error() == cause.Error() {
 		t.Fatal("plugin error leaked raw cause as its public message")
+	}
+}
+
+func TestFakePluginRejectsTypedNilSession(t *testing.T) {
+	t.Parallel()
+	plugin, _ := New(pluginapi.VendorHuawei)
+	var session *sessionStub
+	_, err := plugin.Detect(context.Background(), session)
+	if !pluginapi.IsErrorCode(err, pluginapi.ErrorInvalidRequest) {
+		t.Fatalf("Detect() error = %v", err)
 	}
 }
