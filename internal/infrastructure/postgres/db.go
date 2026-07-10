@@ -64,6 +64,7 @@ func (s *Store) Close() {
 
 // Repositories contains repositories sharing one DBTX implementation.
 type Repositories struct {
+	Access               *AccessRepository
 	Devices              *DeviceRepository
 	Credentials          *CredentialRepository
 	ExecutionCredentials *CredentialExecutionRepository
@@ -73,6 +74,7 @@ type Repositories struct {
 
 func repositories(q DBTX) *Repositories {
 	return &Repositories{
+		Access:               &AccessRepository{q: q},
 		Devices:              &DeviceRepository{q: q},
 		Credentials:          &CredentialRepository{q: q},
 		ExecutionCredentials: &CredentialExecutionRepository{q: q},

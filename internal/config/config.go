@@ -17,13 +17,15 @@ const (
 	defaultWriteTimeout    = 60 * time.Second
 	defaultShutdownTimeout = 15 * time.Second
 	defaultMaxRequestBytes = int64(1 << 20)
+	defaultJWTClockSkew    = 30 * time.Second
 )
 
 // Config is the validated process configuration.
 type Config struct {
-	Server   ServerConfig
-	Database DatabaseConfig
-	Logging  LoggingConfig
+	Server         ServerConfig
+	Database       DatabaseConfig
+	Logging        LoggingConfig
+	Authentication AuthenticationConfig
 }
 
 // ServerConfig controls the HTTP server.
@@ -35,9 +37,7 @@ type ServerConfig struct {
 	MaxRequestBytes int64
 }
 
-// DatabaseConfig describes the future PostgreSQL dependency. TASK-001 only
-// validates whether a required DSN is present; a real database ping is added
-// with the repository layer.
+// DatabaseConfig controls PostgreSQL connectivity.
 type DatabaseConfig struct {
 	Required bool
 	DSN      string
@@ -47,6 +47,18 @@ type DatabaseConfig struct {
 type LoggingConfig struct {
 	Level  string
 	Format string
+}
+
+// AuthenticationConfig controls upstream JWT verification.
+type AuthenticationConfig struct {
+	Enabled           bool
+	Issuer            string
+	Audience          string
+	PublicKeyFile     string
+	KeyID             string
+	ClockSkew         time.Duration
+	UsernameClaim     string
+	ServiceActorClaim string
 }
 
 // LookupEnv matches os.LookupEnv and makes environment overrides testable.
@@ -66,6 +78,11 @@ func Default() Config {
 		Logging: LoggingConfig{
 			Level:  "info",
 			Format: "json",
+		},
+		Authentication: AuthenticationConfig{
+			ClockSkew:         defaultJWTClockSkew,
+			UsernameClaim:     "preferred_username",
+			ServiceActorClaim: "azp",
 		},
 	}
 }
@@ -132,6 +149,29 @@ func (c Config) Validate() error {
 	case "json", "text":
 	default:
 		return fmt.Errorf("unsupported logging.format %q", c.Logging.Format)
+	}
+	if c.Authentication.ClockSkew < 0 || c.Authentication.ClockSkew > 5*time.Minute {
+		return errors.New("authentication.clock_skew must be between 0 and 5 minutes")
+	}
+	if strings.ContainsAny(c.Authentication.UsernameClaim, " \t\r\n") {
+		return errors.New("authentication.username_claim must not contain whitespace")
+	}
+	if strings.ContainsAny(c.Authentication.ServiceActorClaim, " \t\r\n") {
+		return errors.New("authentication.service_actor_claim must not contain whitespace")
+	}
+	if c.Authentication.Enabled {
+		if strings.TrimSpace(c.Authentication.Issuer) == "" {
+			return errors.New("authentication.issuer is required when authentication is enabled")
+		}
+		if strings.TrimSpace(c.Authentication.Audience) == "" {
+			return errors.New("authentication.audience is required when authentication is enabled")
+		}
+		if strings.TrimSpace(c.Authentication.PublicKeyFile) == "" {
+			return errors.New("authentication.public_key_file is required when authentication is enabled")
+		}
+		if strings.TrimSpace(c.Database.DSN) == "" {
+			return errors.New("database.dsn is required when authentication is enabled")
+		}
 	}
 	return nil
 }
@@ -226,6 +266,30 @@ func applyFileValues(cfg *Config, values map[string]string) error {
 			cfg.Logging.Level = strings.ToLower(value)
 		case "logging.format":
 			cfg.Logging.Format = strings.ToLower(value)
+		case "authentication.enabled":
+			b, err := strconv.ParseBool(value)
+			if err != nil {
+				return fmt.Errorf("parse %s: %w", key, err)
+			}
+			cfg.Authentication.Enabled = b
+		case "authentication.issuer":
+			cfg.Authentication.Issuer = value
+		case "authentication.audience":
+			cfg.Authentication.Audience = value
+		case "authentication.public_key_file":
+			cfg.Authentication.PublicKeyFile = value
+		case "authentication.key_id":
+			cfg.Authentication.KeyID = value
+		case "authentication.clock_skew":
+			d, err := time.ParseDuration(value)
+			if err != nil {
+				return fmt.Errorf("parse %s: %w", key, err)
+			}
+			cfg.Authentication.ClockSkew = d
+		case "authentication.username_claim":
+			cfg.Authentication.UsernameClaim = value
+		case "authentication.service_actor_claim":
+			cfg.Authentication.ServiceActorClaim = value
 		default:
 			return fmt.Errorf("unknown config key %q", key)
 		}
@@ -252,6 +316,38 @@ func applyEnvironment(cfg *Config, lookup LookupEnv) error {
 	}
 	if value, ok := lookup("SWITCH_MANAGER_LOG_FORMAT"); ok {
 		cfg.Logging.Format = strings.ToLower(value)
+	}
+	if value, ok := lookup("SWITCH_MANAGER_AUTH_ENABLED"); ok {
+		enabled, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("parse SWITCH_MANAGER_AUTH_ENABLED: %w", err)
+		}
+		cfg.Authentication.Enabled = enabled
+	}
+	if value, ok := lookup("SWITCH_MANAGER_AUTH_ISSUER"); ok {
+		cfg.Authentication.Issuer = value
+	}
+	if value, ok := lookup("SWITCH_MANAGER_AUTH_AUDIENCE"); ok {
+		cfg.Authentication.Audience = value
+	}
+	if value, ok := lookup("SWITCH_MANAGER_AUTH_PUBLIC_KEY_FILE"); ok {
+		cfg.Authentication.PublicKeyFile = value
+	}
+	if value, ok := lookup("SWITCH_MANAGER_AUTH_KEY_ID"); ok {
+		cfg.Authentication.KeyID = value
+	}
+	if value, ok := lookup("SWITCH_MANAGER_AUTH_CLOCK_SKEW"); ok {
+		d, err := time.ParseDuration(value)
+		if err != nil {
+			return fmt.Errorf("parse SWITCH_MANAGER_AUTH_CLOCK_SKEW: %w", err)
+		}
+		cfg.Authentication.ClockSkew = d
+	}
+	if value, ok := lookup("SWITCH_MANAGER_AUTH_USERNAME_CLAIM"); ok {
+		cfg.Authentication.UsernameClaim = value
+	}
+	if value, ok := lookup("SWITCH_MANAGER_AUTH_SERVICE_ACTOR_CLAIM"); ok {
+		cfg.Authentication.ServiceActorClaim = value
 	}
 	return nil
 }
