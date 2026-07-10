@@ -42,7 +42,7 @@ assert_migration_command_fails() {
 bash "${ROOT_DIR}/scripts/migrate.sh" down all >/dev/null
 bash "${ROOT_DIR}/scripts/migrate.sh" up
 
-assert_eq "3" "$(scalar "SELECT count(*) FROM schema_migrations")" "migration count"
+assert_eq "4" "$(scalar "SELECT count(*) FROM schema_migrations")" "migration count"
 assert_eq "3" "$(scalar "SELECT count(*) FROM roles")" "role seed count"
 assert_eq "14" "$(scalar "SELECT count(*) FROM permissions")" "permission seed count"
 assert_eq "14" "$(scalar "SELECT count(*) FROM role_permissions rp JOIN roles r ON r.id = rp.role_id WHERE r.name = 'ADMIN'")" "admin permissions"
@@ -74,6 +74,7 @@ switch_id="$(scalar "INSERT INTO switches(name, host, ssh_port, credential_id, v
 expect_failure "duplicate active switch host and port" "INSERT INTO switches(name, host, ssh_port, credential_id, vendor) VALUES ('sw-duplicate', '192.0.2.10', 22, '${credential_id}', 'HUAWEI')"
 "${psql_cmd[@]}" -c "UPDATE switches SET deleted_at = now() WHERE id = '${switch_id}'" >/dev/null
 "${psql_cmd[@]}" -c "INSERT INTO switches(name, host, ssh_port, credential_id, vendor) VALUES ('sw-replacement', '192.0.2.10', 22, '${credential_id}', 'HUAWEI')" >/dev/null
+expect_failure "active switch prevents credential soft delete" "UPDATE credentials SET deleted_at=now() WHERE id='${credential_id}'"
 
 expect_failure "pending task with started_at" "INSERT INTO tasks(task_type, operation, target_type, target_id, status, execution_mode, created_by, started_at) VALUES ('OPERATION', 'vlan.create', 'switch', 'sw-1', 'PENDING', 'SYNC', '${user_id}', now())"
 
@@ -84,7 +85,7 @@ expect_failure "duplicate actor idempotency key" "INSERT INTO tasks(task_type, o
 expect_failure "historical audit prevents task deletion" "DELETE FROM tasks WHERE id = '${task_id}'"
 
 bash "${ROOT_DIR}/scripts/migrate.sh" up >/dev/null
-assert_eq "3" "$(scalar "SELECT count(*) FROM schema_migrations")" "idempotent up"
+assert_eq "4" "$(scalar "SELECT count(*) FROM schema_migrations")" "idempotent up"
 
 bash "${ROOT_DIR}/scripts/migrate.sh" down all
 assert_eq "0" "$(scalar "SELECT count(*) FROM schema_migrations")" "down migration count"
@@ -93,6 +94,6 @@ assert_eq "" "$(scalar "SELECT to_regclass('public.switches')")" "switches dropp
 assert_eq "" "$(scalar "SELECT to_regclass('public.tasks')")" "tasks dropped"
 
 bash "${ROOT_DIR}/scripts/migrate.sh" up >/dev/null
-assert_eq "3" "$(scalar "SELECT count(*) FROM schema_migrations")" "reapply migration count"
+assert_eq "4" "$(scalar "SELECT count(*) FROM schema_migrations")" "reapply migration count"
 
 echo "migration integration tests passed"
