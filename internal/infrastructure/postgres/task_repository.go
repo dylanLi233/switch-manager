@@ -149,7 +149,7 @@ func (r *TaskRepository) ClaimNextQueued(ctx context.Context, startedAt time.Tim
 	}
 	row := r.q.QueryRow(ctx, `
 		WITH candidate AS (
-			SELECT id FROM tasks
+			SELECT id AS candidate_id FROM tasks
 			WHERE status='QUEUED'
 			ORDER BY created_at, id
 			FOR UPDATE SKIP LOCKED
@@ -158,7 +158,7 @@ func (r *TaskRepository) ClaimNextQueued(ctx context.Context, startedAt time.Tim
 		UPDATE tasks AS t
 		SET status='RUNNING', started_at=$1, version=t.version+1
 		FROM candidate
-		WHERE t.id=candidate.id
+		WHERE t.id=candidate.candidate_id
 		RETURNING `+taskColumns, startedAt)
 	result, err := scanTask(row)
 	if errors.Is(err, pgx.ErrNoRows) {
