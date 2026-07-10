@@ -12,3 +12,13 @@ database:
 logging:
   level: "info"
   format: "json"
+
+authentication:
+  enabled: false
+  issuer: ""
+  audience: ""
+  public_key_file: ""
+  key_id: ""
+  clock_skew: "30s"
+  username_claim: "preferred_username"
+  service_actor_claim: "azp"
