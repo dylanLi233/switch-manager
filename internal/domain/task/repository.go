@@ -36,6 +36,8 @@ type Repository interface {
 	FindByIdempotency(context.Context, string, string) (Persisted, error)
 	Save(context.Context, Persisted, int64) (Persisted, error)
 	ListRecoverable(context.Context, int) ([]Persisted, error)
+	QueuePending(context.Context, string) (Persisted, error)
+	RequestCancel(context.Context, string, time.Time) (Persisted, error)
 	ClaimNextQueued(context.Context, time.Time) (Persisted, error)
 	InterruptRunning(context.Context, time.Time) (int64, error)
 }
