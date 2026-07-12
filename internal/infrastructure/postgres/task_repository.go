@@ -21,7 +21,7 @@ const taskColumns = `
 	COALESCE(idempotency_key,''), payload, result,
 	COALESCE(error_code,''), created_by::text, COALESCE(retry_of::text,''),
 	COALESCE(plugin_name,''), COALESCE(plugin_version,''), created_at,
-	started_at, finished_at, version`
+	started_at, finished_at, cancel_requested_at, version`
 
 // TaskRepository persists durable tasks and performs optimistic updates.
 type TaskRepository struct{ q DBTX }
@@ -43,10 +43,10 @@ func (r *TaskRepository) Create(ctx context.Context, value task.Persisted) (task
 			status, execution_mode, dry_run, save_config, idempotency_key,
 			payload, result, error_code, created_by,
 			retry_of, plugin_name, plugin_version, created_at, started_at,
-			finished_at, version
+			finished_at, cancel_requested_at, version
 		) VALUES (
 			$1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-			$12::jsonb, $13::jsonb, $14, $15::uuid, $16::uuid, $17, $18, $19, $20, $21, $22
+			$12::jsonb, $13::jsonb, $14, $15::uuid, $16::uuid, $17, $18, $19, $20, $21, $22, $23
 		) RETURNING `+taskColumns,
 		value.ID, nilIfBlank(value.ParentTaskID), string(value.Type), string(value.Operation),
 		value.TargetType, value.TargetID, string(value.Status), string(value.ExecutionMode),
@@ -54,7 +54,7 @@ func (r *TaskRepository) Create(ctx context.Context, value task.Persisted) (task
 		[]byte(value.Payload), bytesOrNil(value.Result), nilIfBlank(value.ErrorCode),
 		value.CreatedBy, nilIfBlank(value.RetryOf), nilIfBlank(value.PluginName),
 		nilIfBlank(value.PluginVersion), value.CreatedAt, value.StartedAt,
-		value.FinishedAt, value.Version,
+		value.FinishedAt, value.CancelRequestedAt, value.Version,
 	)
 	result, err := scanTask(row)
 	return result, mapDatabaseError(err, apperror.CodeTaskNotFound, "create task")
@@ -96,15 +96,15 @@ func (r *TaskRepository) Save(ctx context.Context, value task.Persisted, expecte
 			dry_run=$9, save_config=$10, idempotency_key=$11,
 			payload=$12::jsonb, result=$13::jsonb, error_code=$14,
 			retry_of=$15::uuid, plugin_name=$16, plugin_version=$17,
-			started_at=$18, finished_at=$19, version=$20
-		WHERE id=$1::uuid AND version=$21
+			started_at=$18, finished_at=$19, cancel_requested_at=$20, version=$21
+		WHERE id=$1::uuid AND version=$22
 		RETURNING `+taskColumns,
 		value.ID, nilIfBlank(value.ParentTaskID), string(value.Type), string(value.Operation),
 		value.TargetType, value.TargetID, string(value.Status), string(value.ExecutionMode),
 		value.DryRun, value.SaveConfig, nilIfBlank(value.IdempotencyKey),
 		[]byte(value.Payload), bytesOrNil(value.Result), nilIfBlank(value.ErrorCode),
 		nilIfBlank(value.RetryOf), nilIfBlank(value.PluginName), nilIfBlank(value.PluginVersion),
-		value.StartedAt, value.FinishedAt, value.Version, expectedVersion,
+		value.StartedAt, value.FinishedAt, value.CancelRequestedAt, value.Version, expectedVersion,
 	)
 	result, err := scanTask(row)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -140,6 +140,70 @@ func (r *TaskRepository) ListRecoverable(ctx context.Context, limit int) ([]task
 		return nil, mapDatabaseError(err, "", "iterate recoverable tasks")
 	}
 	return result, nil
+}
+
+// QueuePending atomically transitions PENDING to QUEUED. Repeating the request
+// for an already queued task is idempotent.
+func (r *TaskRepository) QueuePending(ctx context.Context, id string) (task.Persisted, error) {
+	if strings.TrimSpace(id) == "" {
+		return task.Persisted{}, apperror.Wrap(apperror.CodeValidationError, "", errors.New("task ID is required"))
+	}
+	row := r.q.QueryRow(ctx, `
+		UPDATE tasks SET status='QUEUED', version=version+1
+		WHERE id=$1::uuid AND status='PENDING'
+		RETURNING `+taskColumns, id)
+	result, err := scanTask(row)
+	if err == nil {
+		return result, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return task.Persisted{}, mapDatabaseError(err, "", "queue pending task")
+	}
+	current, getErr := r.Get(ctx, id)
+	if getErr != nil {
+		return task.Persisted{}, getErr
+	}
+	if current.Status == task.StatusQueued {
+		return current, nil
+	}
+	return task.Persisted{}, apperror.New(apperror.CodeStateConflict, "task is not pending")
+}
+
+// RequestCancel atomically cancels PENDING/QUEUED tasks or records a
+// cooperative cancellation request for RUNNING tasks. Repeated requests are
+// idempotent and do not keep incrementing the task version.
+func (r *TaskRepository) RequestCancel(ctx context.Context, id string, requestedAt time.Time) (task.Persisted, error) {
+	if strings.TrimSpace(id) == "" {
+		return task.Persisted{}, apperror.Wrap(apperror.CodeValidationError, "", errors.New("task ID is required"))
+	}
+	if requestedAt.IsZero() {
+		return task.Persisted{}, apperror.Wrap(apperror.CodeValidationError, "", errors.New("cancellation time is required"))
+	}
+	row := r.q.QueryRow(ctx, `
+		UPDATE tasks SET
+			cancel_requested_at=$2,
+			status=CASE WHEN status IN ('PENDING','QUEUED') THEN 'CANCELLED' ELSE status END,
+			finished_at=CASE WHEN status IN ('PENDING','QUEUED') THEN $2 ELSE finished_at END,
+			version=version+1
+		WHERE id=$1::uuid
+		  AND status IN ('PENDING','QUEUED','RUNNING')
+		  AND (status <> 'RUNNING' OR cancel_requested_at IS NULL)
+		RETURNING `+taskColumns, id, requestedAt)
+	result, err := scanTask(row)
+	if err == nil {
+		return result, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return task.Persisted{}, mapDatabaseError(err, "", "request task cancellation")
+	}
+	current, getErr := r.Get(ctx, id)
+	if getErr != nil {
+		return task.Persisted{}, getErr
+	}
+	if current.Status == task.StatusCancelled || (current.Status == task.StatusRunning && current.CancelRequestedAt != nil) {
+		return current, nil
+	}
+	return task.Persisted{}, apperror.New(apperror.CodeTaskNotCancellable, "task cannot be cancelled in its current state")
 }
 
 // ClaimNextQueued atomically transitions the oldest queued task to RUNNING.
@@ -185,14 +249,14 @@ func scanTask(row rowScanner) (task.Persisted, error) {
 	var result task.Persisted
 	var taskType, status, executionMode string
 	var payload, resultPayload []byte
-	var startedAt, finishedAt sql.NullTime
+	var startedAt, finishedAt, cancelRequestedAt sql.NullTime
 	if err := row.Scan(
 		&result.Task.ID, &result.Task.ParentTaskID, &taskType, &result.Task.Operation,
 		&result.Task.TargetType, &result.Task.TargetID, &status, &executionMode,
 		&result.DryRun, &result.SaveConfig, &result.IdempotencyKey,
 		&payload, &resultPayload, &result.Task.ErrorCode, &result.Task.CreatedBy,
 		&result.Task.RetryOf, &result.Task.PluginName, &result.Task.PluginVersion,
-		&result.Task.CreatedAt, &startedAt, &finishedAt, &result.Task.Version,
+		&result.Task.CreatedAt, &startedAt, &finishedAt, &cancelRequestedAt, &result.Task.Version,
 	); err != nil {
 		return task.Persisted{}, err
 	}
@@ -203,6 +267,7 @@ func scanTask(row rowScanner) (task.Persisted, error) {
 	result.Task.Result = append(json.RawMessage(nil), resultPayload...)
 	result.Task.StartedAt = timePointer(startedAt)
 	result.Task.FinishedAt = timePointer(finishedAt)
+	result.Task.CancelRequestedAt = timePointer(cancelRequestedAt)
 	if err := result.Validate(); err != nil {
 		return task.Persisted{}, fmt.Errorf("invalid task row: %w", err)
 	}
