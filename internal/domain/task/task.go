@@ -78,6 +78,7 @@ var allowedTransitions = map[Status]map[Status]struct{}{
 		StatusSuccess:        {},
 		StatusPartialSuccess: {},
 		StatusFailed:         {},
+		StatusCancelled:      {},
 		StatusInterrupted:    {},
 	},
 }
@@ -93,25 +94,26 @@ func (s Status) CanTransitionTo(next Status) bool {
 
 // Task is one durable operation or batch orchestration record.
 type Task struct {
-	ID            string
-	ParentTaskID  string
-	Type          Type
-	Operation     operation.Name
-	TargetType    string
-	TargetID      string
-	Status        Status
-	ExecutionMode operation.ExecutionMode
-	Payload       json.RawMessage
-	Result        json.RawMessage
-	ErrorCode     string
-	CreatedBy     string
-	RetryOf       string
-	PluginName    string
-	PluginVersion string
-	CreatedAt     time.Time
-	StartedAt     *time.Time
-	FinishedAt    *time.Time
-	Version       int64
+	ID                string
+	ParentTaskID      string
+	Type              Type
+	Operation         operation.Name
+	TargetType        string
+	TargetID          string
+	Status            Status
+	ExecutionMode     operation.ExecutionMode
+	Payload           json.RawMessage
+	Result            json.RawMessage
+	ErrorCode         string
+	CreatedBy         string
+	RetryOf           string
+	PluginName        string
+	PluginVersion     string
+	CreatedAt         time.Time
+	StartedAt         *time.Time
+	FinishedAt        *time.Time
+	CancelRequestedAt *time.Time
+	Version           int64
 }
 
 // Validate enforces task identity, state, and timestamp invariants.
@@ -153,6 +155,14 @@ func (t Task) Validate() error {
 			}
 		} else if t.FinishedAt.Before(*t.StartedAt) {
 			return errors.New("task finish time cannot precede start time")
+		}
+	}
+	if t.CancelRequestedAt != nil {
+		if t.CancelRequestedAt.Before(t.CreatedAt) {
+			return errors.New("task cancellation request cannot precede created time")
+		}
+		if t.FinishedAt != nil && t.CancelRequestedAt.After(*t.FinishedAt) {
+			return errors.New("task cancellation request cannot follow finish time")
 		}
 	}
 	if (t.Status == StatusPending || t.Status == StatusQueued) && t.StartedAt != nil {
