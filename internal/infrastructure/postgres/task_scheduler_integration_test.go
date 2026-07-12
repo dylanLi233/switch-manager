@@ -16,12 +16,13 @@ import (
 )
 
 const (
-	schedulerUserID        = "00000000-0000-0000-0000-000000000301"
-	schedulerSuccessTaskID = "00000000-0000-0000-0000-000000000302"
-	schedulerCancelTaskID  = "00000000-0000-0000-0000-000000000303"
-	schedulerStaleTaskID   = "00000000-0000-0000-0000-000000000304"
-	schedulerRetryTaskID   = "00000000-0000-0000-0000-000000000305"
-	schedulerRaceTaskID    = "00000000-0000-0000-0000-000000000306"
+	schedulerUserID         = "00000000-0000-0000-0000-000000000301"
+	schedulerSuccessTaskID  = "00000000-0000-0000-0000-000000000302"
+	schedulerCancelTaskID   = "00000000-0000-0000-0000-000000000303"
+	schedulerStaleTaskID    = "00000000-0000-0000-0000-000000000304"
+	schedulerRetryTaskID    = "00000000-0000-0000-0000-000000000305"
+	schedulerRaceTaskID     = "00000000-0000-0000-0000-000000000306"
+	schedulerShutdownTaskID = "00000000-0000-0000-0000-000000000307"
 )
 
 func TestTaskSchedulerPostgreSQLIntegration(t *testing.T) {
@@ -71,9 +72,15 @@ func TestTaskSchedulerPostgreSQLIntegration(t *testing.T) {
 	create(schedulerStaleTaskID, task.StatusRunning)
 
 	cancelStarted := make(chan struct{})
+	shutdownStarted := make(chan struct{})
 	handler := scheduler.HandlerFunc(func(ctx context.Context, value task.Persisted) (scheduler.ExecutionResult, error) {
-		if value.ID == schedulerCancelTaskID {
+		switch value.ID {
+		case schedulerCancelTaskID:
 			close(cancelStarted)
+			<-ctx.Done()
+			return scheduler.ExecutionResult{}, ctx.Err()
+		case schedulerShutdownTaskID:
+			close(shutdownStarted)
 			<-ctx.Done()
 			return scheduler.ExecutionResult{}, ctx.Err()
 		}
@@ -98,10 +105,20 @@ func TestTaskSchedulerPostgreSQLIntegration(t *testing.T) {
 	waitPostgresTaskStatus(t, repository, schedulerSuccessTaskID, task.StatusSuccess)
 	waitPostgresTaskStatus(t, repository, schedulerCancelTaskID, task.StatusCancelled)
 	waitPostgresTaskStatus(t, repository, schedulerStaleTaskID, task.StatusInterrupted)
+	create(schedulerShutdownTaskID, task.StatusPending)
+	if _, err := service.Queue(context.Background(), schedulerShutdownTaskID); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-shutdownStarted:
+	case <-time.After(3 * time.Second):
+		t.Fatal("shutdown task did not start")
+	}
 	stop()
 	if err := <-done; err != nil {
 		t.Fatalf("Scheduler.Run() error = %v", err)
 	}
+	waitPostgresTaskStatus(t, repository, schedulerShutdownTaskID, task.StatusInterrupted)
 
 	retry, err := service.Retry(context.Background(), scheduler.RetryRequest{
 		SourceTaskID: schedulerStaleTaskID, NewTaskID: schedulerRetryTaskID,
