@@ -43,7 +43,9 @@ func (f *Factory) SnapshotMACEntries(deviceID string) []telemetry.MACEntry {
 		return nil
 	}
 	f.mu.RLock()
-	result := append([]telemetry.MACEntry(nil), f.macEntries[deviceID]...)
+	values := f.macEntries[deviceID]
+	result := make([]telemetry.MACEntry, len(values))
+	copy(result, values)
 	f.mu.RUnlock()
 	return result
 }
@@ -53,7 +55,9 @@ func (f *Factory) SnapshotARPEntries(deviceID string) []telemetry.ARPEntry {
 		return nil
 	}
 	f.mu.RLock()
-	result := append([]telemetry.ARPEntry(nil), f.arpEntries[deviceID]...)
+	values := f.arpEntries[deviceID]
+	result := make([]telemetry.ARPEntry, len(values))
+	copy(result, values)
 	f.mu.RUnlock()
 	return result
 }
