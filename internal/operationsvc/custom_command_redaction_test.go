@@ -1,6 +1,7 @@
 package operationsvc
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -21,8 +22,17 @@ func TestCustomCommandAuditRequestRedactsCommandArray(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(payload)
-	if strings.Contains(text, "fake.set password") || strings.Contains(text, "secret-value") || !strings.Contains(text, `"commands":"<redacted>"`) {
-		t.Fatalf("payload=%s", text)
+	if strings.Contains(text, "fake.set password") || strings.Contains(text, "secret-value") {
+		t.Fatalf("payload leaked command: %s", text)
+	}
+	var decoded struct {
+		Parameters map[string]any `json:"parameters"`
+	}
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Parameters["commands"] != "<redacted>" {
+		t.Fatalf("parameters=%v", decoded.Parameters)
 	}
 }
 
