@@ -25,6 +25,7 @@ const (
 	ErrorUnsupportedOperation ErrorCode = "UNSUPPORTED_OPERATION"
 	ErrorPlanInvalid          ErrorCode = "PLAN_INVALID"
 	ErrorOutputUnparsable     ErrorCode = "OUTPUT_UNPARSABLE"
+	ErrorResultTooLarge       ErrorCode = "RESULT_TOO_LARGE"
 )
 
 type Error struct {
@@ -56,7 +57,7 @@ func NewError(code ErrorCode, message string) error {
 
 func WrapError(code ErrorCode, message string, cause error) error {
 	switch code {
-	case ErrorInvalidRequest, ErrorDetectionFailed, ErrorUnsupportedOperation, ErrorPlanInvalid, ErrorOutputUnparsable:
+	case ErrorInvalidRequest, ErrorDetectionFailed, ErrorUnsupportedOperation, ErrorPlanInvalid, ErrorOutputUnparsable, ErrorResultTooLarge:
 	default:
 		code = ErrorPlanInvalid
 		message = "plugin returned an invalid error code"
