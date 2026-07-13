@@ -34,13 +34,17 @@ func (p *Plugin) Metadata() pluginapi.Metadata {
 	return pluginapi.Metadata{
 		Name:          "fake-" + strings.ToLower(string(p.vendor)),
 		Vendor:        p.vendor,
-		PluginVersion: pluginapi.Version{Major: 1, Minor: 1, Patch: 0},
+		PluginVersion: pluginapi.Version{Major: 1, Minor: 2, Patch: 0},
 		SDKVersion:    pluginapi.CurrentSDKVersion(),
 		Operations: []pluginapi.OperationName{
 			OperationEchoQuery, OperationEchoConfig, OperationSaveConfig,
 			pluginapi.OperationVLANList, pluginapi.OperationVLANGet,
 			pluginapi.OperationVLANCreate, pluginapi.OperationVLANUpdate,
 			pluginapi.OperationVLANDelete,
+			pluginapi.OperationInterfaceList, pluginapi.OperationInterfaceGet,
+			pluginapi.OperationInterfaceEnable, pluginapi.OperationInterfaceDisable,
+			pluginapi.OperationInterfaceAccess, pluginapi.OperationInterfaceTrunk,
+			pluginapi.OperationInterfaceVLANAdd, pluginapi.OperationInterfaceVLANRemove,
 		},
 	}
 }
@@ -79,13 +83,16 @@ func (p *Plugin) Capabilities(_ context.Context, info pluginapi.DeviceInfo) (plu
 		return pluginapi.CapabilitySet{}, pluginapi.NewError(pluginapi.ErrorInvalidRequest, "device vendor does not match plugin")
 	}
 	capabilities := []pluginapi.Capability{{Operation: OperationEchoQuery, Level: pluginapi.SupportSupported}}
-	configOperations := []pluginapi.OperationName{
+	operations := []pluginapi.OperationName{
 		OperationEchoConfig, OperationSaveConfig,
 		pluginapi.OperationVLANList, pluginapi.OperationVLANGet,
-		pluginapi.OperationVLANCreate, pluginapi.OperationVLANUpdate,
-		pluginapi.OperationVLANDelete,
+		pluginapi.OperationVLANCreate, pluginapi.OperationVLANUpdate, pluginapi.OperationVLANDelete,
+		pluginapi.OperationInterfaceList, pluginapi.OperationInterfaceGet,
+		pluginapi.OperationInterfaceEnable, pluginapi.OperationInterfaceDisable,
+		pluginapi.OperationInterfaceAccess, pluginapi.OperationInterfaceTrunk,
+		pluginapi.OperationInterfaceVLANAdd, pluginapi.OperationInterfaceVLANRemove,
 	}
-	for _, operation := range configOperations {
+	for _, operation := range operations {
 		level, reason := pluginapi.SupportUnsupported, "fake model is unknown"
 		if info.Model == "FAKE-SW" {
 			level, reason = pluginapi.SupportSupported, ""
@@ -162,6 +169,11 @@ func (p *Plugin) BuildPlan(ctx context.Context, request pluginapi.PlanRequest) (
 		}
 		commandText, err = vlanCommand("fake.vlan.delete", request.Parameters, false, false)
 		risk, enterConfig = pluginapi.RiskMedium, true
+	case pluginapi.OperationInterfaceList, pluginapi.OperationInterfaceGet,
+		pluginapi.OperationInterfaceEnable, pluginapi.OperationInterfaceDisable,
+		pluginapi.OperationInterfaceAccess, pluginapi.OperationInterfaceTrunk,
+		pluginapi.OperationInterfaceVLANAdd, pluginapi.OperationInterfaceVLANRemove:
+		commandText, risk, enterConfig, err = interfaceCommand(p, request)
 	default:
 		return pluginapi.ExecutionPlan{}, pluginapi.NewError(pluginapi.ErrorUnsupportedOperation, "operation is not declared")
 	}
@@ -195,13 +207,17 @@ func (p *Plugin) ParseResult(_ context.Context, plan pluginapi.ExecutionPlan, tr
 	result.Commands = commandResults
 	if result.Status == pluginapi.ResultSuccess {
 		last := transcript.Commands[len(transcript.Commands)-1]
-		if isVLANOperation(plan.Operation) {
+		if isVLANOperation(plan.Operation) || isInterfaceOperation(plan.Operation) {
 			var data any
 			if err := json.Unmarshal([]byte(last.Output), &data); err != nil {
-				return pluginapi.OperationResult{}, pluginapi.WrapError(pluginapi.ErrorOutputUnparsable, "fake VLAN output is invalid JSON", err)
+				return pluginapi.OperationResult{}, pluginapi.WrapError(pluginapi.ErrorOutputUnparsable, "fake structured output is invalid JSON", err)
 			}
-			if err := validateVLANOutput(plan.Operation, data); err != nil {
-				return pluginapi.OperationResult{}, pluginapi.WrapError(pluginapi.ErrorOutputUnparsable, "fake VLAN output has an invalid schema", err)
+			if isVLANOperation(plan.Operation) {
+				if err := validateVLANOutput(plan.Operation, data); err != nil {
+					return pluginapi.OperationResult{}, pluginapi.WrapError(pluginapi.ErrorOutputUnparsable, "fake VLAN output has an invalid schema", err)
+				}
+			} else if err := validateInterfaceOutput(plan.Operation, data); err != nil {
+				return pluginapi.OperationResult{}, pluginapi.WrapError(pluginapi.ErrorOutputUnparsable, "fake interface output has an invalid schema", err)
 			}
 			result.Data = data
 		} else {
@@ -282,7 +298,7 @@ func integerParameter(value any) (int, error) {
 	case int64:
 		return int(typed), nil
 	case float64:
-		if math.Trunc(typed) != typed || typed < math.MinInt || typed > math.MaxInt {
+		if math.Trunc(typed) != typed || typed < -1<<31 || typed > 1<<31-1 {
 			return 0, fmt.Errorf("not an integer")
 		}
 		return int(typed), nil

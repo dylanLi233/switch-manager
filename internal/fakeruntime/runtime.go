@@ -15,6 +15,7 @@ import (
 
 	"github.com/dylanLi233/switch-manager/internal/apperror"
 	"github.com/dylanLi233/switch-manager/internal/domain/device"
+	"github.com/dylanLi233/switch-manager/internal/domain/switchinterface"
 	"github.com/dylanLi233/switch-manager/internal/domain/vlan"
 	"github.com/dylanLi233/switch-manager/internal/inventorysvc"
 	"github.com/dylanLi233/switch-manager/internal/operationsvc"
@@ -22,11 +23,14 @@ import (
 )
 
 type Factory struct {
-	mu      sync.RWMutex
-	devices map[string]map[int]vlan.VLAN
+	mu         sync.RWMutex
+	devices    map[string]map[int]vlan.VLAN
+	interfaces map[string]map[string]switchinterface.Interface
 }
 
-func New() *Factory { return &Factory{devices: make(map[string]map[int]vlan.VLAN)} }
+func New() *Factory {
+	return &Factory{devices: make(map[string]map[int]vlan.VLAN), interfaces: make(map[string]map[string]switchinterface.Interface)}
+}
 
 func (f *Factory) Open(ctx context.Context, managed device.Device) (operationsvc.Session, error) {
 	if f == nil {
@@ -45,8 +49,18 @@ func (f *Factory) Open(ctx context.Context, managed device.Device) (operationsvc
 	if _, exists := f.devices[managed.ID]; !exists {
 		f.devices[managed.ID] = make(map[int]vlan.VLAN)
 	}
+	if _, exists := f.interfaces[managed.ID]; !exists {
+		f.interfaces[managed.ID] = defaultInterfaces()
+	}
 	f.mu.Unlock()
 	return &session{factory: f, deviceID: managed.ID, vendor: managed.Vendor}, nil
+}
+
+func defaultInterfaces() map[string]switchinterface.Interface {
+	return map[string]switchinterface.Interface{
+		"FakeEthernet1/0/1": {Name: "FakeEthernet1/0/1", Description: "fake access port", AdminState: switchinterface.AdminEnabled, OperState: switchinterface.OperUp, Mode: switchinterface.ModeAccess, AccessVLAN: 1},
+		"FakeEthernet1/0/2": {Name: "FakeEthernet1/0/2", Description: "fake trunk port", AdminState: switchinterface.AdminEnabled, OperState: switchinterface.OperUp, Mode: switchinterface.ModeTrunk, NativeVLAN: 1, AllowedVLANs: []int{1}},
+	}
 }
 
 // Detect provides a deterministic identity fixture when the fake runtime is
@@ -64,7 +78,12 @@ func (f *Factory) Detect(ctx context.Context, managed device.Device, _ inventory
 	return inventorysvc.DetectionResult{
 		Vendor: managed.Vendor, Model: "FAKE-SW", OSVersion: "fake-1.0",
 		EvidenceSummary: "explicit fake runtime fixture",
-		Capabilities: []string{"vlan.list", "vlan.get", "vlan.create", "vlan.update", "vlan.delete", "config.save"},
+		Capabilities: []string{
+			"vlan.list", "vlan.get", "vlan.create", "vlan.update", "vlan.delete",
+			"interface.list", "interface.get", "interface.enable", "interface.disable",
+			"interface.access", "interface.trunk", "interface.vlan.add", "interface.vlan.remove",
+			"config.save",
+		},
 	}, nil
 }
 
@@ -80,6 +99,22 @@ func (f *Factory) Snapshot(deviceID string) []vlan.VLAN {
 	}
 	f.mu.RUnlock()
 	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
+	return result
+}
+
+func (f *Factory) SnapshotInterfaces(deviceID string) []switchinterface.Interface {
+	if f == nil {
+		return nil
+	}
+	f.mu.RLock()
+	values := f.interfaces[deviceID]
+	result := make([]switchinterface.Interface, 0, len(values))
+	for _, value := range values {
+		value.AllowedVLANs = append([]int(nil), value.AllowedVLANs...)
+		result = append(result, value)
+	}
+	f.mu.RUnlock()
+	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
 	return result
 }
 
@@ -196,6 +231,8 @@ func (s *session) execute(text string) (string, error) {
 		delete(values, payload.VLANID)
 		s.factory.mu.Unlock()
 		return marshal(map[string]any{"deleted": true, "vlan_id": payload.VLANID})
+	case text == "fake.interface.list" || strings.HasPrefix(text, "fake.interface."):
+		return s.executeInterface(text)
 	case strings.HasPrefix(text, "fake.echo.query ") || strings.HasPrefix(text, "fake.echo.config "):
 		_, quoted, ok := strings.Cut(text, " ")
 		if !ok {

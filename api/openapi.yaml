@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: Switch Manager API
-  version: 0.1.0
-  description: Vendor-neutral switch management API. TASK-013 documents the VLAN surface.
+  version: 0.2.0
+  description: Vendor-neutral switch management API. Interface names are validated by the selected vendor plugin.
 servers:
   - url: /api/v1
 security:
@@ -11,10 +11,8 @@ paths:
   /switches/{switchId}/vlans:
     get:
       operationId: listVlans
-      summary: List VLANs through a durable synchronous query task
       x-required-permission: operation.query
-      parameters:
-        - $ref: '#/components/parameters/SwitchID'
+      parameters: [{ $ref: '#/components/parameters/SwitchID' }]
       responses:
         '200': { $ref: '#/components/responses/OperationSuccess' }
         '401': { $ref: '#/components/responses/Unauthorized' }
@@ -22,16 +20,13 @@ paths:
         '422': { $ref: '#/components/responses/Unprocessable' }
     post:
       operationId: createVlan
-      summary: Create a VLAN
       x-required-permission: operation.config
       parameters:
         - $ref: '#/components/parameters/SwitchID'
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/CreateVLANRequest' }
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateVLANRequest' } } }
       responses:
         '200': { $ref: '#/components/responses/OperationSuccess' }
         '202': { $ref: '#/components/responses/OperationAccepted' }
@@ -43,7 +38,6 @@ paths:
   /switches/{switchId}/vlans/{vlanId}:
     get:
       operationId: getVlan
-      summary: Get one VLAN
       x-required-permission: operation.query
       parameters:
         - $ref: '#/components/parameters/SwitchID'
@@ -53,7 +47,6 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
     patch:
       operationId: updateVlan
-      summary: Update the normalized VLAN name
       x-required-permission: operation.config
       parameters:
         - $ref: '#/components/parameters/SwitchID'
@@ -61,9 +54,7 @@ paths:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/UpdateVLANRequest' }
+        content: { application/json: { schema: { $ref: '#/components/schemas/UpdateVLANRequest' } } }
       responses:
         '200': { $ref: '#/components/responses/OperationSuccess' }
         '202': { $ref: '#/components/responses/OperationAccepted' }
@@ -72,7 +63,6 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
     delete:
       operationId: deleteVlan
-      summary: Delete a VLAN
       x-required-permission: operation.config
       parameters:
         - $ref: '#/components/parameters/SwitchID'
@@ -80,46 +70,130 @@ paths:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: false
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/OperationOptions' }
+        content: { application/json: { schema: { $ref: '#/components/schemas/OperationOptions' } } }
       responses:
         '200': { $ref: '#/components/responses/OperationSuccess' }
         '202': { $ref: '#/components/responses/OperationAccepted' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+  /switches/{switchId}/interfaces:
+    get:
+      operationId: listInterfaces
+      summary: List normalized interfaces through a durable synchronous task
+      x-required-permission: operation.query
+      parameters: [{ $ref: '#/components/parameters/SwitchID' }]
+      responses:
+        '200': { $ref: '#/components/responses/OperationSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /switches/{switchId}/interfaces/{interfaceName}:
+    get:
+      operationId: getInterface
+      summary: Get one normalized interface; interface syntax is plugin-specific
+      x-required-permission: operation.query
+      parameters:
+        - $ref: '#/components/parameters/SwitchID'
+        - $ref: '#/components/parameters/InterfaceName'
+      responses:
+        '200': { $ref: '#/components/responses/OperationSuccess' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /switches/{switchId}/interfaces/{interfaceName}:enable:
+    post:
+      operationId: enableInterface
+      x-required-permission: operation.config
+      parameters:
+        - $ref: '#/components/parameters/SwitchID'
+        - $ref: '#/components/parameters/InterfaceName'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: '#/components/schemas/OperationOptions' } } }
+      responses: { '200': { $ref: '#/components/responses/OperationSuccess' }, '202': { $ref: '#/components/responses/OperationAccepted' }, '400': { $ref: '#/components/responses/BadRequest' }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/Unprocessable' } }
+  /switches/{switchId}/interfaces/{interfaceName}:disable:
+    post:
+      operationId: disableInterface
+      x-required-permission: operation.config
+      parameters:
+        - $ref: '#/components/parameters/SwitchID'
+        - $ref: '#/components/parameters/InterfaceName'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: '#/components/schemas/OperationOptions' } } }
+      responses: { '200': { $ref: '#/components/responses/OperationSuccess' }, '202': { $ref: '#/components/responses/OperationAccepted' }, '400': { $ref: '#/components/responses/BadRequest' }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/Unprocessable' } }
+  /switches/{switchId}/interfaces/{interfaceName}/access:
+    put:
+      operationId: setInterfaceAccessMode
+      x-required-permission: operation.config
+      parameters:
+        - $ref: '#/components/parameters/SwitchID'
+        - $ref: '#/components/parameters/InterfaceName'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/InterfaceAccessRequest' } } }
+      responses: { '200': { $ref: '#/components/responses/OperationSuccess' }, '202': { $ref: '#/components/responses/OperationAccepted' }, '400': { $ref: '#/components/responses/BadRequest' }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/Unprocessable' } }
+  /switches/{switchId}/interfaces/{interfaceName}/trunk:
+    put:
+      operationId: setInterfaceTrunkMode
+      description: native_vlan must be present in allowed_vlans; an unsupported native VLAN semantic returns 422 rather than being ignored.
+      x-required-permission: operation.config
+      parameters:
+        - $ref: '#/components/parameters/SwitchID'
+        - $ref: '#/components/parameters/InterfaceName'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/InterfaceTrunkRequest' } } }
+      responses: { '200': { $ref: '#/components/responses/OperationSuccess' }, '202': { $ref: '#/components/responses/OperationAccepted' }, '400': { $ref: '#/components/responses/BadRequest' }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/Unprocessable' } }
+  /switches/{switchId}/interfaces/{interfaceName}/vlans:
+    post:
+      operationId: addInterfaceVlanMembership
+      x-required-permission: operation.config
+      parameters:
+        - $ref: '#/components/parameters/SwitchID'
+        - $ref: '#/components/parameters/InterfaceName'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/InterfaceMembershipRequest' } } }
+      responses: { '200': { $ref: '#/components/responses/OperationSuccess' }, '202': { $ref: '#/components/responses/OperationAccepted' }, '400': { $ref: '#/components/responses/BadRequest' }, '403': { $ref: '#/components/responses/Forbidden' }, '404': { $ref: '#/components/responses/NotFound' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/Unprocessable' } }
+  /switches/{switchId}/interfaces/{interfaceName}/vlans/{vlanId}:
+    delete:
+      operationId: removeInterfaceVlanMembership
+      x-required-permission: operation.config
+      parameters:
+        - $ref: '#/components/parameters/SwitchID'
+        - $ref: '#/components/parameters/InterfaceName'
+        - $ref: '#/components/parameters/VLANID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: '#/components/schemas/OperationOptions' } } }
+      responses: { '200': { $ref: '#/components/responses/OperationSuccess' }, '202': { $ref: '#/components/responses/OperationAccepted' }, '400': { $ref: '#/components/responses/BadRequest' }, '403': { $ref: '#/components/responses/Forbidden' }, '404': { $ref: '#/components/responses/NotFound' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/Unprocessable' } }
 components:
   securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
   parameters:
-    SwitchID:
-      name: switchId
+    SwitchID: { name: switchId, in: path, required: true, schema: { type: string, minLength: 1 } }
+    VLANID: { name: vlanId, in: path, required: true, schema: { type: integer, minimum: 1, maximum: 4094 } }
+    InterfaceName:
+      name: interfaceName
       in: path
       required: true
-      schema: { type: string, minLength: 1 }
-    VLANID:
-      name: vlanId
-      in: path
-      required: true
-      schema: { type: integer, minimum: 1, maximum: 4094 }
-    IdempotencyKey:
-      name: Idempotency-Key
-      in: header
-      required: false
+      description: Plugin-specific interface name. Slash characters must be percent-encoded inside this single path segment.
       schema: { type: string, minLength: 1, maxLength: 128 }
+    IdempotencyKey: { name: Idempotency-Key, in: header, required: false, schema: { type: string, minLength: 1, maxLength: 128 } }
   schemas:
     OperationOptions:
       type: object
       additionalProperties: false
       properties:
-        execution_mode:
-          type: string
-          enum: [SYNC, ASYNC]
-          default: SYNC
+        execution_mode: { type: string, enum: [SYNC, ASYNC], default: SYNC }
         dry_run: { type: boolean, default: false }
         save_config: { type: boolean, default: false }
         confirm_risk: { type: boolean, default: false }
@@ -129,14 +203,8 @@ components:
       required: [vlan_id]
       properties:
         vlan_id: { type: integer, minimum: 1, maximum: 4094 }
-        name:
-          type: string
-          maxLength: 64
-          pattern: '^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$'
-        execution_mode:
-          type: string
-          enum: [SYNC, ASYNC]
-          default: SYNC
+        name: { type: string, maxLength: 64, pattern: '^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$' }
+        execution_mode: { type: string, enum: [SYNC, ASYNC], default: SYNC }
         dry_run: { type: boolean, default: false }
         save_config: { type: boolean, default: false }
         confirm_risk: { type: boolean, default: false }
@@ -145,25 +213,58 @@ components:
       additionalProperties: false
       required: [name]
       properties:
-        name:
-          type: string
-          minLength: 1
-          maxLength: 64
-          pattern: '^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$'
-        execution_mode:
-          type: string
-          enum: [SYNC, ASYNC]
-          default: SYNC
+        name: { type: string, minLength: 1, maxLength: 64, pattern: '^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$' }
+        execution_mode: { type: string, enum: [SYNC, ASYNC], default: SYNC }
+        dry_run: { type: boolean, default: false }
+        save_config: { type: boolean, default: false }
+        confirm_risk: { type: boolean, default: false }
+    Interface:
+      type: object
+      required: [name, admin_state, oper_state, mode]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        admin_state: { type: string, enum: [ENABLED, DISABLED] }
+        oper_state: { type: string, enum: [UP, DOWN, UNKNOWN] }
+        mode: { type: string, enum: [ACCESS, TRUNK, UNKNOWN] }
+        access_vlan: { type: integer, minimum: 1, maximum: 4094 }
+        native_vlan: { type: integer, minimum: 1, maximum: 4094 }
+        allowed_vlans: { type: array, uniqueItems: true, items: { type: integer, minimum: 1, maximum: 4094 } }
+    InterfaceAccessRequest:
+      type: object
+      additionalProperties: false
+      required: [vlan_id]
+      properties:
+        vlan_id: { type: integer, minimum: 1, maximum: 4094 }
+        execution_mode: { type: string, enum: [SYNC, ASYNC], default: SYNC }
+        dry_run: { type: boolean, default: false }
+        save_config: { type: boolean, default: false }
+        confirm_risk: { type: boolean, default: false }
+    InterfaceTrunkRequest:
+      type: object
+      additionalProperties: false
+      required: [allowed_vlans]
+      properties:
+        allowed_vlans: { type: array, minItems: 1, uniqueItems: true, items: { type: integer, minimum: 1, maximum: 4094 } }
+        native_vlan: { type: integer, minimum: 1, maximum: 4094 }
+        execution_mode: { type: string, enum: [SYNC, ASYNC], default: SYNC }
+        dry_run: { type: boolean, default: false }
+        save_config: { type: boolean, default: false }
+        confirm_risk: { type: boolean, default: false }
+    InterfaceMembershipRequest:
+      type: object
+      additionalProperties: false
+      required: [vlan_id]
+      properties:
+        vlan_id: { type: integer, minimum: 1, maximum: 4094 }
+        execution_mode: { type: string, enum: [SYNC, ASYNC], default: SYNC }
         dry_run: { type: boolean, default: false }
         save_config: { type: boolean, default: false }
         confirm_risk: { type: boolean, default: false }
     SuccessEnvelope:
       type: object
       required: [request_id, success, data]
-      properties:
-        request_id: { type: string }
-        success: { const: true }
-        data: { type: object }
+      properties: { request_id: { type: string }, success: { const: true }, data: { type: object } }
     ErrorEnvelope:
       type: object
       required: [request_id, success, error]
@@ -173,36 +274,13 @@ components:
         error:
           type: object
           required: [code, message, retryable]
-          properties:
-            code: { type: string }
-            message: { type: string }
-            retryable: { type: boolean }
+          properties: { code: { type: string }, message: { type: string }, retryable: { type: boolean } }
   responses:
-    OperationSuccess:
-      description: Synchronous operation completed or dry-run plan generated
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/SuccessEnvelope' }
-    OperationAccepted:
-      description: Asynchronous or deferred task accepted; data contains task_id and status
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/SuccessEnvelope' }
-    BadRequest:
-      description: Validation error
-      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
-    Unauthorized:
-      description: Authentication required
-      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
-    Forbidden:
-      description: Permission denied
-      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
-    NotFound:
-      description: VLAN or switch not found
-      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
-    Conflict:
-      description: Idempotency or state conflict
-      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
-    Unprocessable:
-      description: Plugin or capability not supported
-      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    OperationSuccess: { description: Synchronous operation completed or dry-run plan generated, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+    OperationAccepted: { description: Asynchronous or deferred task accepted, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+    BadRequest: { description: Validation error, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+    Unauthorized: { description: Authentication required, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+    Forbidden: { description: Permission denied, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+    NotFound: { description: Resource not found, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+    Conflict: { description: Idempotency or state conflict, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+    Unprocessable: { description: Plugin or capability not supported, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
