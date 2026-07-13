@@ -1,4 +1,4 @@
-CREATE TABLE batch_tasks (
+CREATE TABLE IF NOT EXISTS batch_tasks (
     id uuid PRIMARY KEY,
     parent_task_id uuid NOT NULL UNIQUE REFERENCES tasks(id),
     operation text NOT NULL,
@@ -16,10 +16,10 @@ CREATE TABLE batch_tasks (
     CHECK (success_count + failed_count + cancelled_count <= total_count)
 );
 
-CREATE INDEX batch_tasks_status_created_idx
+CREATE INDEX IF NOT EXISTS batch_tasks_status_created_idx
     ON batch_tasks(status, created_at, id);
 
-CREATE TABLE batch_task_items (
+CREATE TABLE IF NOT EXISTS batch_task_items (
     batch_task_id uuid NOT NULL REFERENCES batch_tasks(id) ON DELETE CASCADE,
     device_id uuid NOT NULL REFERENCES switches(id),
     child_task_id uuid NOT NULL UNIQUE REFERENCES tasks(id),
@@ -28,5 +28,5 @@ CREATE TABLE batch_task_items (
     UNIQUE (batch_task_id, sequence_no)
 );
 
-CREATE INDEX batch_task_items_batch_sequence_idx
+CREATE INDEX IF NOT EXISTS batch_task_items_batch_sequence_idx
     ON batch_task_items(batch_task_id, sequence_no);
