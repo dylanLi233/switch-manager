@@ -38,6 +38,11 @@ func (h *TelemetryHandlers) Register(mux *http.ServeMux, authenticator Authentic
 	register("GET /api/v1/switches/{switchID}/mac-table", h.macTable)
 	register("GET /api/v1/switches/{switchID}/arp-table", h.arpTable)
 	register("GET /api/v1/switches/{switchID}/status", h.status)
+
+	// Custom commands share the same durable Operation Service and Scheduler as
+	// telemetry and other device operations. Their handler performs separate
+	// custom_read/custom_config authorization and command-policy preflight.
+	(&CustomCommandHandlers{operations: h.operations}).Register(mux, authenticator)
 }
 
 func (h *TelemetryHandlers) macTable(w http.ResponseWriter, r *http.Request) error {
