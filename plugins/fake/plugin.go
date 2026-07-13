@@ -14,6 +14,7 @@ import (
 const (
 	OperationEchoQuery  pluginapi.OperationName = "diagnostic.echo"
 	OperationEchoConfig pluginapi.OperationName = "configuration.echo"
+	OperationSaveConfig pluginapi.OperationName = "config.save"
 )
 
 type Plugin struct{ vendor pluginapi.Vendor }
@@ -31,7 +32,7 @@ func (p *Plugin) Metadata() pluginapi.Metadata {
 		Vendor:        p.vendor,
 		PluginVersion: pluginapi.Version{Major: 1, Minor: 0, Patch: 0},
 		SDKVersion:    pluginapi.CurrentSDKVersion(),
-		Operations:    []pluginapi.OperationName{OperationEchoQuery, OperationEchoConfig},
+		Operations:    []pluginapi.OperationName{OperationEchoQuery, OperationEchoConfig, OperationSaveConfig},
 	}
 }
 
@@ -54,10 +55,7 @@ func (p *Plugin) Detect(ctx context.Context, session pluginapi.CLISession) (plug
 	if detectedVendor := values["vendor"]; detectedVendor != "" && detectedVendor != string(p.vendor) {
 		return pluginapi.DeviceInfo{}, pluginapi.NewError(pluginapi.ErrorDetectionFailed, "detected vendor does not match plugin vendor")
 	}
-	info := pluginapi.DeviceInfo{
-		Vendor: p.vendor, Model: values["model"], OSVersion: values["os"],
-		PromptFamily: values["prompt"], Attributes: map[string]string{"source": "fake"},
-	}
+	info := pluginapi.DeviceInfo{Vendor: p.vendor, Model: values["model"], OSVersion: values["os"], PromptFamily: values["prompt"], Attributes: map[string]string{"source": "fake"}}
 	if err := info.Validate(); err != nil {
 		return pluginapi.DeviceInfo{}, pluginapi.WrapError(pluginapi.ErrorOutputUnparsable, "fake device information is invalid", err)
 	}
@@ -72,13 +70,12 @@ func (p *Plugin) Capabilities(_ context.Context, info pluginapi.DeviceInfo) (plu
 		return pluginapi.CapabilitySet{}, pluginapi.NewError(pluginapi.ErrorInvalidRequest, "device vendor does not match plugin")
 	}
 	config := pluginapi.Capability{Operation: OperationEchoConfig, Level: pluginapi.SupportUnsupported, Reason: "fake model is unknown"}
+	save := pluginapi.Capability{Operation: OperationSaveConfig, Level: pluginapi.SupportUnsupported, Reason: "fake model is unknown"}
 	if info.Model == "FAKE-SW" {
 		config.Level, config.Reason = pluginapi.SupportSupported, ""
+		save.Level, save.Reason = pluginapi.SupportSupported, ""
 	}
-	return pluginapi.NewCapabilitySet(
-		pluginapi.Capability{Operation: OperationEchoQuery, Level: pluginapi.SupportSupported},
-		config,
-	)
+	return pluginapi.NewCapabilitySet(pluginapi.Capability{Operation: OperationEchoQuery, Level: pluginapi.SupportSupported}, config, save)
 }
 
 func (p *Plugin) BuildPlan(ctx context.Context, request pluginapi.PlanRequest) (pluginapi.ExecutionPlan, error) {
@@ -96,34 +93,38 @@ func (p *Plugin) BuildPlan(ctx context.Context, request pluginapi.PlanRequest) (
 	if !exists || capability.Level == pluginapi.SupportUnsupported {
 		return pluginapi.ExecutionPlan{}, pluginapi.NewError(pluginapi.ErrorUnsupportedOperation, "operation is not supported for the fake device")
 	}
-	message, ok := request.Parameters["message"].(string)
-	if !ok || strings.TrimSpace(message) == "" || len(message) > 256 || strings.ContainsAny(message, "\r\n") {
-		return pluginapi.ExecutionPlan{}, pluginapi.NewError(pluginapi.ErrorInvalidRequest, "message must be a non-empty single-line string up to 256 bytes")
-	}
 
-	commandPrefix, risk, enterConfig := "fake.echo.query", pluginapi.RiskLow, false
+	commandText, risk, enterConfig := "", pluginapi.RiskLow, false
 	switch request.Operation {
 	case OperationEchoQuery:
 		if request.Class != pluginapi.ClassQuery {
 			return pluginapi.ExecutionPlan{}, pluginapi.NewError(pluginapi.ErrorInvalidRequest, "diagnostic.echo requires QUERY class")
 		}
+		message, ok := request.Parameters["message"].(string)
+		if !ok || strings.TrimSpace(message) == "" || len(message) > 256 || strings.ContainsAny(message, "\r\n") {
+			return pluginapi.ExecutionPlan{}, pluginapi.NewError(pluginapi.ErrorInvalidRequest, "message must be a non-empty single-line string up to 256 bytes")
+		}
+		commandText = "fake.echo.query " + strconv.Quote(message)
 	case OperationEchoConfig:
 		if request.Class != pluginapi.ClassConfig {
 			return pluginapi.ExecutionPlan{}, pluginapi.NewError(pluginapi.ErrorInvalidRequest, "configuration.echo requires CONFIG class")
 		}
-		commandPrefix, risk, enterConfig = "fake.echo.config", pluginapi.RiskMedium, true
+		message, ok := request.Parameters["message"].(string)
+		if !ok || strings.TrimSpace(message) == "" || len(message) > 256 || strings.ContainsAny(message, "\r\n") {
+			return pluginapi.ExecutionPlan{}, pluginapi.NewError(pluginapi.ErrorInvalidRequest, "message must be a non-empty single-line string up to 256 bytes")
+		}
+		commandText, risk, enterConfig = "fake.echo.config "+strconv.Quote(message), pluginapi.RiskMedium, true
+	case OperationSaveConfig:
+		if request.Class != pluginapi.ClassConfig || request.SaveConfig {
+			return pluginapi.ExecutionPlan{}, pluginapi.NewError(pluginapi.ErrorInvalidRequest, "config.save requires CONFIG class and cannot recursively request save_config")
+		}
+		commandText, risk = "fake.config.save", pluginapi.RiskMedium
 	default:
 		return pluginapi.ExecutionPlan{}, pluginapi.NewError(pluginapi.ErrorUnsupportedOperation, "operation is not declared")
 	}
 
 	metadata := p.Metadata()
-	plan := pluginapi.ExecutionPlan{
-		PlanID: request.PlanID, DeviceID: request.DeviceID, Vendor: p.vendor,
-		PluginName: metadata.Name, PluginVersion: metadata.PluginVersion.String(),
-		Operation: request.Operation, Class: request.Class, EnterConfigMode: enterConfig,
-		SaveConfig: request.SaveConfig, RiskLevel: risk,
-		Commands: []pluginapi.PlannedCommand{{Sequence: 1, Text: commandPrefix + " " + strconv.Quote(message), Timeout: 2 * time.Second}},
-	}
+	plan := pluginapi.ExecutionPlan{PlanID: request.PlanID, DeviceID: request.DeviceID, Vendor: p.vendor, PluginName: metadata.Name, PluginVersion: metadata.PluginVersion.String(), Operation: request.Operation, Class: request.Class, EnterConfigMode: enterConfig, SaveConfig: request.SaveConfig, RiskLevel: risk, Commands: []pluginapi.PlannedCommand{{Sequence: 1, Text: commandText, Timeout: 2 * time.Second}}}
 	if err := plan.Validate(); err != nil {
 		return pluginapi.ExecutionPlan{}, pluginapi.WrapError(pluginapi.ErrorPlanInvalid, "fake plugin generated an invalid plan", err)
 	}
@@ -141,10 +142,7 @@ func (p *Plugin) ParseResult(_ context.Context, plan pluginapi.ExecutionPlan, tr
 	outputs := make([]string, 0, len(transcript.Commands))
 	result := pluginapi.OperationResult{Status: pluginapi.ResultSuccess, StartedAt: transcript.StartedAt, FinishedAt: transcript.FinishedAt}
 	for _, record := range transcript.Commands {
-		commandResults = append(commandResults, pluginapi.CommandExecution{
-			Sequence: record.Sequence, Succeeded: record.Succeeded, OutputTruncated: record.OutputTruncated,
-			ErrorCode: record.ErrorCode, Duration: record.Duration,
-		})
+		commandResults = append(commandResults, pluginapi.CommandExecution{Sequence: record.Sequence, Succeeded: record.Succeeded, OutputTruncated: record.OutputTruncated, ErrorCode: record.ErrorCode, Duration: record.Duration})
 		outputs = append(outputs, record.Output)
 		if !record.Succeeded && result.Status == pluginapi.ResultSuccess {
 			result.Status, result.ErrorCode, result.ErrorMessage = pluginapi.ResultFailed, record.ErrorCode, "fake command execution failed"
