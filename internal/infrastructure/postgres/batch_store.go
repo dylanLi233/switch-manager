@@ -1,7 +1,6 @@
 package postgres
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -186,10 +185,13 @@ func (s *BatchStore) RefreshBatch(ctx context.Context, id string, at time.Time) 
 		if err != nil {
 			return apperror.Wrap(apperror.CodeInternalError, "", err)
 		}
-		if _, err := repositories.Tasks.q.Exec(ctx, `
-			UPDATE batch_tasks SET success_count=$2,failed_count=$3,cancelled_count=$4,status=$5,updated_at=$6
-			WHERE id=$1::uuid`, id, successCount, failedCount, cancelledCount, string(aggregate), at); err != nil {
-			return mapDatabaseError(err, "", "update batch aggregate")
+		aggregateChanged := current.Batch.Status != aggregate || current.Batch.SuccessCount != successCount || current.Batch.FailedCount != failedCount || current.Batch.CancelledCount != cancelledCount
+		if aggregateChanged {
+			if _, err := repositories.Tasks.q.Exec(ctx, `
+				UPDATE batch_tasks SET success_count=$2,failed_count=$3,cancelled_count=$4,status=$5,updated_at=$6
+				WHERE id=$1::uuid`, id, successCount, failedCount, cancelledCount, string(aggregate), at); err != nil {
+				return mapDatabaseError(err, "", "update batch aggregate")
+			}
 		}
 		summary, _ := json.Marshal(map[string]any{"batch_id": id, "total_count": len(current.Items), "success_count": successCount, "failed_count": failedCount, "cancelled_count": cancelledCount, "status": aggregate})
 		parentStatus := task.StatusRunning
@@ -206,7 +208,7 @@ func (s *BatchStore) RefreshBatch(ctx context.Context, id string, at time.Time) 
 			}
 		}
 		parentWasTerminal := current.Parent.Status.Terminal()
-		needsParentUpdate := current.Parent.Status != parentStatus || !bytes.Equal(current.Parent.Result, summary) || current.Parent.ErrorCode != errorCode
+		needsParentUpdate := current.Parent.Status != parentStatus || aggregateChanged || len(current.Parent.Result) == 0 || current.Parent.ErrorCode != errorCode
 		if needsParentUpdate {
 			if _, err := repositories.Tasks.q.Exec(ctx, `
 				UPDATE tasks SET status=$2,result=$3::jsonb,error_code=NULLIF($4,''),
