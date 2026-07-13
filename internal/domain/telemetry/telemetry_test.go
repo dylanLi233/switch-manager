@@ -16,12 +16,15 @@ func TestNormalizeMACEntry(t *testing.T) {
 }
 
 func TestNormalizeARPEntry(t *testing.T) {
-	value, err := NormalizeARPEntry(ARPEntry{IPAddress: "2001:0db8::1", MACAddress: "00:11:22:33:44:55", InterfaceName: "FakeEthernet1/0/1", State: ARPReachable, AgeSeconds: 3})
+	value, err := NormalizeARPEntry(ARPEntry{IPAddress: "192.0.2.1", MACAddress: "00:11:22:33:44:55", InterfaceName: "FakeEthernet1/0/1", State: ARPReachable, AgeSeconds: 3})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if value.IPAddress != "2001:db8::1" {
+	if value.IPAddress != "192.0.2.1" {
 		t.Fatalf("ip=%q", value.IPAddress)
+	}
+	if _, err := NormalizeARPEntry(ARPEntry{IPAddress: "2001:db8::1", MACAddress: "00:11:22:33:44:55", InterfaceName: "FakeEthernet1/0/1", State: ARPReachable, AgeSeconds: 3}); err == nil {
+		t.Fatal("expected IPv6 ARP rejection")
 	}
 	if _, err := NormalizeARPEntry(ARPEntry{IPAddress: "192.0.2.1", MACAddress: "00:11:22:33:44:55", InterfaceName: "FakeEthernet1/0/1", State: ARPIncomplete}); err == nil {
 		t.Fatal("expected incomplete ARP MAC rejection")
