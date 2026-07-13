@@ -48,6 +48,8 @@ assert_eq "14" "$(scalar "SELECT count(*) FROM permissions")" "permission seed c
 assert_eq "14" "$(scalar "SELECT count(*) FROM role_permissions rp JOIN roles r ON r.id = rp.role_id WHERE r.name = 'ADMIN'")" "admin permissions"
 assert_eq "4" "$(scalar "SELECT count(*) FROM role_permissions rp JOIN roles r ON r.id = rp.role_id WHERE r.name = 'VIEWER'")" "viewer permissions"
 assert_eq "4" "$(scalar "SELECT count(*) FROM role_permissions rp JOIN roles r ON r.id = rp.role_id WHERE r.name = 'AUDITOR'")" "auditor permissions"
+assert_eq "batch_tasks" "$(scalar "SELECT to_regclass('public.batch_tasks')")" "batch_tasks created"
+assert_eq "batch_task_items" "$(scalar "SELECT to_regclass('public.batch_task_items')")" "batch_task_items created"
 
 runner_test_dir="$(mktemp -d)"
 trap 'rm -rf "${runner_test_dir}"' EXIT
@@ -93,6 +95,8 @@ assert_eq "0" "$(scalar "SELECT count(*) FROM schema_migrations")" "down migrati
 assert_eq "" "$(scalar "SELECT to_regclass('public.roles')")" "roles dropped"
 assert_eq "" "$(scalar "SELECT to_regclass('public.switches')")" "switches dropped"
 assert_eq "" "$(scalar "SELECT to_regclass('public.tasks')")" "tasks dropped"
+assert_eq "" "$(scalar "SELECT to_regclass('public.batch_tasks')")" "batch_tasks dropped"
+assert_eq "" "$(scalar "SELECT to_regclass('public.batch_task_items')")" "batch_task_items dropped"
 
 bash "${ROOT_DIR}/scripts/migrate.sh" up >/dev/null
 assert_eq "5" "$(scalar "SELECT count(*) FROM schema_migrations")" "reapply migration count"
