@@ -3,6 +3,7 @@ package commandsecurity
 import (
 	"context"
 
+	"github.com/dylanLi233/switch-manager/internal/apperror"
 	"github.com/dylanLi233/switch-manager/pkg/pluginapi"
 )
 
@@ -25,7 +26,19 @@ func (p *securedPlugin) ParseResult(ctx context.Context, plan pluginapi.Executio
 	for _, record := range transcript.Commands {
 		total += len(record.Output)
 		if total > p.decision.Limits.MaxOutputBytes {
-			return pluginapi.OperationResult{}, pluginapi.NewError(pluginapi.ErrorResultTooLarge, "custom command output exceeds the configured limit")
+			commands := make([]pluginapi.CommandExecution, len(transcript.Commands))
+			for index, item := range transcript.Commands {
+				commands[index] = pluginapi.CommandExecution{
+					Sequence: item.Sequence, Succeeded: item.Succeeded,
+					OutputTruncated: true, ErrorCode: item.ErrorCode, Duration: item.Duration,
+				}
+			}
+			return pluginapi.OperationResult{
+				Status: pluginapi.ResultFailed, Commands: commands,
+				ErrorCode: string(apperror.CodeResultTooLarge),
+				ErrorMessage: "custom command output exceeds the configured limit",
+				StartedAt: transcript.StartedAt, FinishedAt: transcript.FinishedAt,
+			}, nil
 		}
 	}
 	return p.Plugin.ParseResult(ctx, plan, RedactTranscript(transcript, p.decision.OutputRedactions))
