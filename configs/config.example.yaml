@@ -41,3 +41,8 @@ authentication:
 # Read-only MAC/ARP query protection. This is service-controlled and cannot be
 # overridden by an API caller:
 #   SWITCH_MANAGER_QUERY_RESULT_LIMIT              (1-100000, default 5000)
+#
+# Local immutable backup storage. Setting the root enables the subsystem.
+# The process creates and enforces root/subdirectory mode 0700 and file mode 0600:
+#   SWITCH_MANAGER_BACKUP_ROOT_DIR                 (for example /var/lib/switch-manager/backups)
+#   SWITCH_MANAGER_BACKUP_MAX_FILE_BYTES           (1-1073741824, default 10485760)

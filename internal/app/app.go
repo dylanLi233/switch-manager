@@ -12,6 +12,7 @@ import (
 	"regexp"
 
 	"github.com/dylanLi233/switch-manager/internal/authn"
+	"github.com/dylanLi233/switch-manager/internal/backupfs"
 	"github.com/dylanLi233/switch-manager/internal/concurrency"
 	"github.com/dylanLi233/switch-manager/internal/config"
 	"github.com/dylanLi233/switch-manager/internal/fakeruntime"
@@ -30,11 +31,12 @@ import (
 )
 
 type App struct {
-	cfg        config.Config
-	logger     *slog.Logger
-	server     *httpserver.Server
-	store      *postgres.Store
-	dispatcher *scheduler.Scheduler
+	cfg           config.Config
+	logger        *slog.Logger
+	server        *httpserver.Server
+	store         *postgres.Store
+	dispatcher    *scheduler.Scheduler
+	backupStorage *backupfs.Storage
 }
 
 func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, error) {
@@ -59,6 +61,10 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	if err != nil {
 		return nil, fmt.Errorf("load query limits: %w", err)
 	}
+	backupConfig, err := config.LoadBackupEnvironment(os.LookupEnv)
+	if err != nil {
+		return nil, fmt.Errorf("load backup storage configuration: %w", err)
+	}
 	if inventoryConfig.Enabled && !cfg.Authentication.Enabled {
 		return nil, errors.New("inventory API requires authentication to be enabled")
 	}
@@ -68,6 +74,17 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 
 	app := &App{cfg: cfg, logger: logger}
 	checks := []health.Check{}
+	if backupConfig.Enabled {
+		storage, err := backupfs.New(backupfs.Config{RootDir: backupConfig.RootDir, MaxFileBytes: backupConfig.MaxFileBytes})
+		if err != nil {
+			return nil, fmt.Errorf("initialize backup storage: %w", err)
+		}
+		if err := storage.CheckReady(ctx); err != nil {
+			return nil, fmt.Errorf("verify backup storage: %w", err)
+		}
+		app.backupStorage = storage
+		checks = append(checks, health.CheckFunc{CheckName: "backup_storage", Fn: storage.CheckReady})
+	}
 	needsDatabase := cfg.Database.Required || cfg.Authentication.Enabled || inventoryConfig.Enabled || fakeConfig.Enabled
 	if needsDatabase {
 		store, err := postgres.Open(ctx, cfg.Database.DSN)
