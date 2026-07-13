@@ -100,7 +100,7 @@ func authorizeBatchTargets(r *http.Request, permission auth.Permission, deviceID
 		if !allowed {
 			return r, auth.Actor{}, apperror.New(apperror.CodeForbidden, "")
 		}
-		if batchRoleRank(role) > batchRoleRank(selected) {
+		if selected == "" || batchRoleRank(role) < batchRoleRank(selected) {
 			selected = role
 		}
 	}
@@ -163,27 +163,27 @@ func (h *BatchHandlers) action(w http.ResponseWriter, r *http.Request) error {
 }
 
 type batchItemResponse struct {
-	SequenceNo int             `json:"sequence_no"`
-	DeviceID   string          `json:"device_id"`
-	ChildTaskID string         `json:"child_task_id"`
-	Status     task.Status     `json:"status"`
-	ErrorCode  string          `json:"error_code,omitempty"`
-	RetryOf    string          `json:"retry_of,omitempty"`
-	Result     json.RawMessage `json:"result,omitempty"`
+	SequenceNo  int             `json:"sequence_no"`
+	DeviceID    string          `json:"device_id"`
+	ChildTaskID string          `json:"child_task_id"`
+	Status      task.Status     `json:"status"`
+	ErrorCode   string          `json:"error_code,omitempty"`
+	RetryOf     string          `json:"retry_of,omitempty"`
+	Result      json.RawMessage `json:"result,omitempty"`
 }
 
 type batchViewResponse struct {
-	BatchID            string              `json:"batch_id"`
-	ParentTaskID       string              `json:"parent_task_id"`
-	RetryOfBatchID     string              `json:"retry_of_batch_id,omitempty"`
-	Operation          operation.Name      `json:"operation"`
-	Status             task.Status         `json:"status"`
-	ContinueOnFailure  bool                `json:"continue_on_failure"`
-	TotalCount         int                 `json:"total_count"`
-	SuccessCount       int                 `json:"success_count"`
-	FailedCount        int                 `json:"failed_count"`
-	CancelledCount     int                 `json:"cancelled_count"`
-	Items              []batchItemResponse `json:"items"`
+	BatchID           string              `json:"batch_id"`
+	ParentTaskID      string              `json:"parent_task_id"`
+	RetryOfBatchID    string              `json:"retry_of_batch_id,omitempty"`
+	Operation         operation.Name      `json:"operation"`
+	Status            task.Status         `json:"status"`
+	ContinueOnFailure bool                `json:"continue_on_failure"`
+	TotalCount        int                 `json:"total_count"`
+	SuccessCount      int                 `json:"success_count"`
+	FailedCount       int                 `json:"failed_count"`
+	CancelledCount    int                 `json:"cancelled_count"`
+	Items             []batchItemResponse `json:"items"`
 }
 
 func batchResponse(snapshot task.BatchSnapshot) batchViewResponse {
