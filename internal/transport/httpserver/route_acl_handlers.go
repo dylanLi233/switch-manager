@@ -30,11 +30,13 @@ func (h *RouteACLHandlers) Register(mux *http.ServeMux, authenticator Authentica
 		return
 	}
 	register := func(pattern string, permission auth.Permission, experimental bool, handler ErrorHandlerFunc) {
-		adapted := AdaptErrorHandler(handler)
+		var wrapped http.Handler = AdaptErrorHandler(handler)
+		wrapped = RequirePermission(permission, switchScope)(wrapped)
+		wrapped = AuthenticationMiddleware(authenticator)(wrapped)
 		if experimental {
-			adapted = experimentalACL(adapted)
+			wrapped = experimentalACL(wrapped)
 		}
-		mux.Handle(pattern, AuthenticationMiddleware(authenticator)(RequirePermission(permission, switchScope)(adapted)))
+		mux.Handle(pattern, wrapped)
 	}
 	register("GET /api/v1/switches/{switchID}/routes", auth.PermissionOperationQuery, false, h.listRoutes)
 	register("GET /api/v1/switches/{switchID}/routes/{routeID}", auth.PermissionOperationQuery, false, h.getRoute)
