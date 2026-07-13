@@ -1,10 +1,12 @@
 openapi: 3.1.0
 info:
   title: Switch Manager API
-  version: 0.3.0
+  version: 0.4.0
   description: >-
-    Vendor-neutral switch management API. Interface and ACL names are validated
-    by the selected vendor plugin. The ACL contract is explicitly experimental-v1.
+    Vendor-neutral switch management API. Vendor-specific names and command
+    semantics are validated by the selected plugin. ACL remains explicitly
+    experimental-v1. MAC and ARP queries validate the complete device result
+    before applying API pagination and enforce a server-controlled result limit.
 servers:
   - url: /api/v1
 security:
@@ -58,13 +60,7 @@ paths:
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/UpdateVLANRequest' } } }
-      responses:
-        '200': { $ref: '#/components/responses/OperationSuccess' }
-        '202': { $ref: '#/components/responses/OperationAccepted' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
-        '422': { $ref: '#/components/responses/Unprocessable' }
+      responses: { '200': { $ref: '#/components/responses/OperationSuccess' }, '202': { $ref: '#/components/responses/OperationAccepted' }, '400': { $ref: '#/components/responses/BadRequest' }, '404': { $ref: '#/components/responses/NotFound' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/Unprocessable' } }
     delete:
       operationId: deleteVlan
       x-required-permission: operation.config
@@ -75,38 +71,22 @@ paths:
       requestBody:
         required: false
         content: { application/json: { schema: { $ref: '#/components/schemas/OperationOptions' } } }
-      responses:
-        '200': { $ref: '#/components/responses/OperationSuccess' }
-        '202': { $ref: '#/components/responses/OperationAccepted' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
-        '422': { $ref: '#/components/responses/Unprocessable' }
+      responses: { '200': { $ref: '#/components/responses/OperationSuccess' }, '202': { $ref: '#/components/responses/OperationAccepted' }, '400': { $ref: '#/components/responses/BadRequest' }, '404': { $ref: '#/components/responses/NotFound' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/Unprocessable' } }
 
   /switches/{switchId}/interfaces:
     get:
       operationId: listInterfaces
-      summary: List normalized interfaces through a durable synchronous task
       x-required-permission: operation.query
       parameters: [{ $ref: '#/components/parameters/SwitchID' }]
-      responses:
-        '200': { $ref: '#/components/responses/OperationSuccess' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/Unprocessable' }
+      responses: { '200': { $ref: '#/components/responses/OperationSuccess' }, '401': { $ref: '#/components/responses/Unauthorized' }, '403': { $ref: '#/components/responses/Forbidden' }, '422': { $ref: '#/components/responses/Unprocessable' } }
   /switches/{switchId}/interfaces/{interfaceName}:
     get:
       operationId: getInterface
-      summary: Get one normalized interface; interface syntax is plugin-specific
       x-required-permission: operation.query
       parameters:
         - $ref: '#/components/parameters/SwitchID'
         - $ref: '#/components/parameters/InterfaceName'
-      responses:
-        '200': { $ref: '#/components/responses/OperationSuccess' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '422': { $ref: '#/components/responses/Unprocessable' }
+      responses: { '200': { $ref: '#/components/responses/OperationSuccess' }, '400': { $ref: '#/components/responses/BadRequest' }, '404': { $ref: '#/components/responses/NotFound' }, '422': { $ref: '#/components/responses/Unprocessable' } }
   /switches/{switchId}/interfaces/{interfaceName}:enable:
     post:
       operationId: enableInterface
@@ -115,9 +95,7 @@ paths:
         - $ref: '#/components/parameters/SwitchID'
         - $ref: '#/components/parameters/InterfaceName'
         - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: false
-        content: { application/json: { schema: { $ref: '#/components/schemas/OperationOptions' } } }
+      requestBody: { required: false, content: { application/json: { schema: { $ref: '#/components/schemas/OperationOptions' } } } }
       responses: { '200': { $ref: '#/components/responses/OperationSuccess' }, '202': { $ref: '#/components/responses/OperationAccepted' }, '400': { $ref: '#/components/responses/BadRequest' }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/Unprocessable' } }
   /switches/{switchId}/interfaces/{interfaceName}:disable:
     post:
@@ -127,9 +105,7 @@ paths:
         - $ref: '#/components/parameters/SwitchID'
         - $ref: '#/components/parameters/InterfaceName'
         - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: false
-        content: { application/json: { schema: { $ref: '#/components/schemas/OperationOptions' } } }
+      requestBody: { required: false, content: { application/json: { schema: { $ref: '#/components/schemas/OperationOptions' } } } }
       responses: { '200': { $ref: '#/components/responses/OperationSuccess' }, '202': { $ref: '#/components/responses/OperationAccepted' }, '400': { $ref: '#/components/responses/BadRequest' }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/Unprocessable' } }
   /switches/{switchId}/interfaces/{interfaceName}/access:
     put:
@@ -139,22 +115,17 @@ paths:
         - $ref: '#/components/parameters/SwitchID'
         - $ref: '#/components/parameters/InterfaceName'
         - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/InterfaceAccessRequest' } } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/InterfaceAccessRequest' } } } }
       responses: { '200': { $ref: '#/components/responses/OperationSuccess' }, '202': { $ref: '#/components/responses/OperationAccepted' }, '400': { $ref: '#/components/responses/BadRequest' }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/Unprocessable' } }
   /switches/{switchId}/interfaces/{interfaceName}/trunk:
     put:
       operationId: setInterfaceTrunkMode
-      description: native_vlan must be present in allowed_vlans; unsupported vendor semantics return 422 rather than being ignored.
       x-required-permission: operation.config
       parameters:
         - $ref: '#/components/parameters/SwitchID'
         - $ref: '#/components/parameters/InterfaceName'
         - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/InterfaceTrunkRequest' } } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/InterfaceTrunkRequest' } } } }
       responses: { '200': { $ref: '#/components/responses/OperationSuccess' }, '202': { $ref: '#/components/responses/OperationAccepted' }, '400': { $ref: '#/components/responses/BadRequest' }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/Unprocessable' } }
   /switches/{switchId}/interfaces/{interfaceName}/vlans:
     post:
@@ -164,9 +135,7 @@ paths:
         - $ref: '#/components/parameters/SwitchID'
         - $ref: '#/components/parameters/InterfaceName'
         - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/InterfaceMembershipRequest' } } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/InterfaceMembershipRequest' } } } }
       responses: { '200': { $ref: '#/components/responses/OperationSuccess' }, '202': { $ref: '#/components/responses/OperationAccepted' }, '400': { $ref: '#/components/responses/BadRequest' }, '403': { $ref: '#/components/responses/Forbidden' }, '404': { $ref: '#/components/responses/NotFound' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/Unprocessable' } }
   /switches/{switchId}/interfaces/{interfaceName}/vlans/{vlanId}:
     delete:
@@ -177,31 +146,22 @@ paths:
         - $ref: '#/components/parameters/InterfaceName'
         - $ref: '#/components/parameters/VLANID'
         - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: false
-        content: { application/json: { schema: { $ref: '#/components/schemas/OperationOptions' } } }
+      requestBody: { required: false, content: { application/json: { schema: { $ref: '#/components/schemas/OperationOptions' } } } }
       responses: { '200': { $ref: '#/components/responses/OperationSuccess' }, '202': { $ref: '#/components/responses/OperationAccepted' }, '400': { $ref: '#/components/responses/BadRequest' }, '403': { $ref: '#/components/responses/Forbidden' }, '404': { $ref: '#/components/responses/NotFound' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/Unprocessable' } }
 
   /switches/{switchId}/routes:
     get:
       operationId: listStaticRoutes
-      summary: List normalized static routes
       x-required-permission: operation.query
       parameters: [{ $ref: '#/components/parameters/SwitchID' }]
-      responses:
-        '200': { $ref: '#/components/responses/OperationSuccess' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/Unprocessable' }
+      responses: { '200': { $ref: '#/components/responses/OperationSuccess' }, '401': { $ref: '#/components/responses/Unauthorized' }, '403': { $ref: '#/components/responses/Forbidden' }, '422': { $ref: '#/components/responses/Unprocessable' } }
     post:
       operationId: createStaticRoute
       x-required-permission: operation.config
       parameters:
         - $ref: '#/components/parameters/SwitchID'
         - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/StaticRouteRequest' } } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/StaticRouteRequest' } } } }
       responses: { '200': { $ref: '#/components/responses/OperationSuccess' }, '202': { $ref: '#/components/responses/OperationAccepted' }, '400': { $ref: '#/components/responses/BadRequest' }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/Unprocessable' } }
   /switches/{switchId}/routes/{routeId}:
     get:
@@ -218,21 +178,16 @@ paths:
         - $ref: '#/components/parameters/SwitchID'
         - $ref: '#/components/parameters/RouteID'
         - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/StaticRouteRequest' } } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/StaticRouteRequest' } } } }
       responses: { '200': { $ref: '#/components/responses/OperationSuccess' }, '202': { $ref: '#/components/responses/OperationAccepted' }, '400': { $ref: '#/components/responses/BadRequest' }, '404': { $ref: '#/components/responses/NotFound' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/Unprocessable' } }
     delete:
       operationId: deleteStaticRoute
-      description: routeId is a system-generated identifier; complete CLI text is never placed in the URL.
       x-required-permission: operation.config
       parameters:
         - $ref: '#/components/parameters/SwitchID'
         - $ref: '#/components/parameters/RouteID'
         - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: false
-        content: { application/json: { schema: { $ref: '#/components/schemas/OperationOptions' } } }
+      requestBody: { required: false, content: { application/json: { schema: { $ref: '#/components/schemas/OperationOptions' } } } }
       responses: { '200': { $ref: '#/components/responses/OperationSuccess' }, '202': { $ref: '#/components/responses/OperationAccepted' }, '400': { $ref: '#/components/responses/BadRequest' }, '404': { $ref: '#/components/responses/NotFound' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/Unprocessable' } }
 
   /switches/{switchId}/acls:
@@ -242,11 +197,7 @@ paths:
       x-experimental-schema-version: experimental-v1
       x-required-permission: operation.query
       parameters: [{ $ref: '#/components/parameters/SwitchID' }]
-      responses:
-        '200': { $ref: '#/components/responses/ExperimentalOperationSuccess' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/Unprocessable' }
+      responses: { '200': { $ref: '#/components/responses/ExperimentalOperationSuccess' }, '401': { $ref: '#/components/responses/Unauthorized' }, '403': { $ref: '#/components/responses/Forbidden' }, '422': { $ref: '#/components/responses/Unprocessable' } }
     post:
       operationId: createExperimentalAcl
       x-experimental: true
@@ -255,9 +206,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/SwitchID'
         - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/ExperimentalACLRequest' } } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ExperimentalACLRequest' } } } }
       responses: { '200': { $ref: '#/components/responses/ExperimentalOperationSuccess' }, '202': { $ref: '#/components/responses/ExperimentalOperationAccepted' }, '400': { $ref: '#/components/responses/BadRequest' }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/Unprocessable' } }
   /switches/{switchId}/acls/{aclId}:
     get:
@@ -278,9 +227,7 @@ paths:
         - $ref: '#/components/parameters/SwitchID'
         - $ref: '#/components/parameters/ACLID'
         - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/ExperimentalACLRequest' } } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ExperimentalACLRequest' } } } }
       responses: { '200': { $ref: '#/components/responses/ExperimentalOperationSuccess' }, '202': { $ref: '#/components/responses/ExperimentalOperationAccepted' }, '400': { $ref: '#/components/responses/BadRequest' }, '404': { $ref: '#/components/responses/NotFound' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/Unprocessable' } }
     delete:
       operationId: deleteExperimentalAcl
@@ -291,10 +238,61 @@ paths:
         - $ref: '#/components/parameters/SwitchID'
         - $ref: '#/components/parameters/ACLID'
         - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: false
-        content: { application/json: { schema: { $ref: '#/components/schemas/OperationOptions' } } }
+      requestBody: { required: false, content: { application/json: { schema: { $ref: '#/components/schemas/OperationOptions' } } } }
       responses: { '200': { $ref: '#/components/responses/ExperimentalOperationSuccess' }, '202': { $ref: '#/components/responses/ExperimentalOperationAccepted' }, '400': { $ref: '#/components/responses/BadRequest' }, '404': { $ref: '#/components/responses/NotFound' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/Unprocessable' } }
+
+  /switches/{switchId}/mac-table:
+    get:
+      operationId: listMacTable
+      summary: Query, validate, limit, and paginate the complete MAC table
+      description: >-
+        The service validates the complete device result before pagination. The
+        caller cannot override the server result limit. If the full table exceeds
+        that limit the operation fails with RESULT_TOO_LARGE (HTTP 422).
+      x-required-permission: operation.query
+      parameters:
+        - $ref: '#/components/parameters/SwitchID'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200': { $ref: '#/components/responses/OperationSuccess' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /switches/{switchId}/arp-table:
+    get:
+      operationId: listArpTable
+      summary: Query, validate, limit, and paginate the complete ARP table
+      description: >-
+        The service validates the complete device result before pagination. The
+        caller cannot override the server result limit. If the full table exceeds
+        that limit the operation fails with RESULT_TOO_LARGE (HTTP 422).
+      x-required-permission: operation.query
+      parameters:
+        - $ref: '#/components/parameters/SwitchID'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200': { $ref: '#/components/responses/OperationSuccess' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /switches/{switchId}/status:
+    get:
+      operationId: getDeviceStatus
+      summary: Get one normalized device status snapshot
+      description: This endpoint accepts no query parameters.
+      x-required-permission: operation.query
+      parameters:
+        - $ref: '#/components/parameters/SwitchID'
+      responses:
+        '200': { $ref: '#/components/responses/OperationSuccess' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
 
 components:
   securitySchemes:
@@ -306,20 +304,21 @@ components:
       name: interfaceName
       in: path
       required: true
-      description: Plugin-specific interface name. Slash characters must be percent-encoded inside this single path segment.
+      description: Plugin-specific interface name. Slash characters must be percent-encoded inside this path segment.
       schema: { type: string, minLength: 1, maxLength: 128 }
-    RouteID:
-      name: routeId
-      in: path
-      required: true
-      description: System-generated route identifier, never a raw CLI command.
-      schema: { type: string, minLength: 1, maxLength: 64 }
-    ACLID:
-      name: aclId
-      in: path
-      required: true
-      schema: { type: string, minLength: 1, maxLength: 64 }
+    RouteID: { name: routeId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 64 } }
+    ACLID: { name: aclId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 64 } }
     IdempotencyKey: { name: Idempotency-Key, in: header, required: false, schema: { type: string, minLength: 1, maxLength: 128 } }
+    Page:
+      name: page
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 1000000, default: 1 }
+    PageSize:
+      name: page_size
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 500, default: 50 }
   headers:
     ExperimentalACL:
       description: Experimental ACL schema version.
@@ -339,7 +338,7 @@ components:
       required: [vlan_id]
       properties:
         vlan_id: { type: integer, minimum: 1, maximum: 4094 }
-        name: { type: string, maxLength: 64, pattern: '^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$' }
+        name: { type: string, maxLength: 64 }
         execution_mode: { type: string, enum: [SYNC, ASYNC], default: SYNC }
         dry_run: { type: boolean, default: false }
         save_config: { type: boolean, default: false }
@@ -349,23 +348,11 @@ components:
       additionalProperties: false
       required: [name]
       properties:
-        name: { type: string, minLength: 1, maxLength: 64, pattern: '^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$' }
+        name: { type: string, minLength: 1, maxLength: 64 }
         execution_mode: { type: string, enum: [SYNC, ASYNC], default: SYNC }
         dry_run: { type: boolean, default: false }
         save_config: { type: boolean, default: false }
         confirm_risk: { type: boolean, default: false }
-    Interface:
-      type: object
-      required: [name, admin_state, oper_state, mode]
-      properties:
-        name: { type: string }
-        description: { type: string }
-        admin_state: { type: string, enum: [ENABLED, DISABLED] }
-        oper_state: { type: string, enum: [UP, DOWN, UNKNOWN] }
-        mode: { type: string, enum: [ACCESS, TRUNK, UNKNOWN] }
-        access_vlan: { type: integer, minimum: 1, maximum: 4094 }
-        native_vlan: { type: integer, minimum: 1, maximum: 4094 }
-        allowed_vlans: { type: array, uniqueItems: true, items: { type: integer, minimum: 1, maximum: 4094 } }
     InterfaceAccessRequest:
       type: object
       additionalProperties: false
@@ -397,39 +384,28 @@ components:
         dry_run: { type: boolean, default: false }
         save_config: { type: boolean, default: false }
         confirm_risk: { type: boolean, default: false }
-    StaticRoute:
-      type: object
-      additionalProperties: false
-      required: [route_id, address_family, destination, next_hop]
-      properties:
-        route_id: { type: string, minLength: 1, maxLength: 64 }
-        address_family: { type: string, enum: [IPV4, IPV6] }
-        destination: { type: string, description: Canonical CIDR prefix }
-        next_hop: { type: string, description: IP address matching address_family }
-        outgoing_interface: { type: string, maxLength: 128 }
-        description: { type: string, maxLength: 128 }
     StaticRouteRequest:
       type: object
       additionalProperties: false
       required: [address_family, destination, next_hop]
       properties:
         address_family: { type: string, enum: [IPV4, IPV6] }
-        destination: { type: string }
+        destination: { type: string, description: CIDR normalized to its network prefix }
         next_hop: { type: string }
         outgoing_interface: { type: string, maxLength: 128 }
-        description: { type: string, maxLength: 128 }
+        description: { type: string, maxLength: 256 }
         execution_mode: { type: string, enum: [SYNC, ASYNC], default: SYNC }
         dry_run: { type: boolean, default: false }
         save_config: { type: boolean, default: false }
         confirm_risk: { type: boolean, default: false }
-    ACLPortRange:
+    PortRange:
       type: object
       additionalProperties: false
-      required: [from, to]
+      required: [start, end]
       properties:
-        from: { type: integer, minimum: 1, maximum: 65535 }
-        to: { type: integer, minimum: 1, maximum: 65535 }
-    ExperimentalACLRule:
+        start: { type: integer, minimum: 1, maximum: 65535 }
+        end: { type: integer, minimum: 1, maximum: 65535 }
+    ACLRule:
       type: object
       additionalProperties: false
       required: [sequence, action, protocol, source, destination]
@@ -437,40 +413,83 @@ components:
         sequence: { type: integer, minimum: 1, maximum: 65535 }
         action: { type: string, enum: [PERMIT, DENY] }
         protocol: { type: string, enum: [ANY, TCP, UDP, ICMP] }
-        source: { type: string, description: The literal 'any' or a CIDR prefix }
-        destination: { type: string, description: The literal 'any' or a CIDR prefix }
-        source_ports: { type: array, items: { $ref: '#/components/schemas/ACLPortRange' } }
-        destination_ports: { type: array, items: { $ref: '#/components/schemas/ACLPortRange' } }
-        description: { type: string, maxLength: 128 }
-    ExperimentalACL:
-      type: object
-      additionalProperties: false
-      required: [acl_id, schema_version, name, address_family, rules]
-      properties:
-        acl_id: { type: string, minLength: 1, maxLength: 64 }
-        schema_version: { type: string, const: experimental-v1 }
-        name: { type: string, minLength: 1, maxLength: 64, description: Final syntax is validated by the vendor plugin }
-        description: { type: string, maxLength: 128 }
-        address_family: { type: string, enum: [ANY, IPV4, IPV6] }
-        rules: { type: array, minItems: 1, maxItems: 256, items: { $ref: '#/components/schemas/ExperimentalACLRule' } }
+        source: { type: string, description: "any or CIDR" }
+        destination: { type: string, description: "any or CIDR" }
+        source_ports: { type: array, items: { $ref: '#/components/schemas/PortRange' } }
+        destination_ports: { type: array, items: { $ref: '#/components/schemas/PortRange' } }
+        description: { type: string, maxLength: 256 }
     ExperimentalACLRequest:
       type: object
       additionalProperties: false
       required: [schema_version, name, address_family, rules]
       properties:
         schema_version: { type: string, const: experimental-v1 }
-        name: { type: string, minLength: 1, maxLength: 64, description: Final syntax is validated by the vendor plugin }
-        description: { type: string, maxLength: 128 }
+        name: { type: string, minLength: 1, maxLength: 64 }
+        description: { type: string, maxLength: 256 }
         address_family: { type: string, enum: [ANY, IPV4, IPV6] }
-        rules: { type: array, minItems: 1, maxItems: 256, items: { $ref: '#/components/schemas/ExperimentalACLRule' } }
+        rules: { type: array, minItems: 1, maxItems: 256, items: { $ref: '#/components/schemas/ACLRule' } }
         execution_mode: { type: string, enum: [SYNC, ASYNC], default: SYNC }
         dry_run: { type: boolean, default: false }
         save_config: { type: boolean, default: false }
         confirm_risk: { type: boolean, default: false }
+    MACEntry:
+      type: object
+      additionalProperties: false
+      required: [mac_address, vlan_id, interface_name, entry_type, age_seconds]
+      properties:
+        mac_address: { type: string, example: '00:11:22:33:44:55' }
+        vlan_id: { type: integer, minimum: 1, maximum: 4094 }
+        interface_name: { type: string, minLength: 1, maxLength: 128 }
+        entry_type: { type: string, enum: [DYNAMIC, STATIC] }
+        age_seconds: { type: integer, minimum: 0 }
+    MACPage:
+      type: object
+      additionalProperties: false
+      required: [entries, page, page_size, total]
+      properties:
+        entries: { type: array, items: { $ref: '#/components/schemas/MACEntry' } }
+        page: { type: integer, minimum: 1 }
+        page_size: { type: integer, minimum: 1, maximum: 500 }
+        total: { type: integer, minimum: 0 }
+    ARPEntry:
+      type: object
+      additionalProperties: false
+      required: [ip_address, interface_name, state, age_seconds]
+      properties:
+        ip_address: { type: string }
+        mac_address: { type: string, example: '00:11:22:33:44:55' }
+        interface_name: { type: string, minLength: 1, maxLength: 128 }
+        state: { type: string, enum: [REACHABLE, STALE, INCOMPLETE, STATIC, UNKNOWN] }
+        age_seconds: { type: integer, minimum: 0 }
+    ARPPage:
+      type: object
+      additionalProperties: false
+      required: [entries, page, page_size, total]
+      properties:
+        entries: { type: array, items: { $ref: '#/components/schemas/ARPEntry' } }
+        page: { type: integer, minimum: 1 }
+        page_size: { type: integer, minimum: 1, maximum: 500 }
+        total: { type: integer, minimum: 0 }
+    DeviceStatus:
+      type: object
+      additionalProperties: false
+      required: [hostname, uptime_seconds, health_state, active_alarms, collected_at]
+      properties:
+        hostname: { type: string, minLength: 1, maxLength: 253 }
+        uptime_seconds: { type: integer, minimum: 0 }
+        health_state: { type: string, enum: [HEALTHY, DEGRADED, CRITICAL, UNKNOWN] }
+        cpu_usage_percent: { type: number, minimum: 0, maximum: 100 }
+        memory_usage_percent: { type: number, minimum: 0, maximum: 100 }
+        temperature_celsius: { type: number, minimum: -100, maximum: 250 }
+        active_alarms: { type: array, maxItems: 256, items: { type: string, minLength: 1, maxLength: 256 } }
+        collected_at: { type: string, format: date-time }
     SuccessEnvelope:
       type: object
       required: [request_id, success, data]
-      properties: { request_id: { type: string }, success: { const: true }, data: { type: object } }
+      properties:
+        request_id: { type: string }
+        success: { const: true }
+        data: { type: object }
     ErrorEnvelope:
       type: object
       required: [request_id, success, error]
@@ -480,9 +499,12 @@ components:
         error:
           type: object
           required: [code, message, retryable]
-          properties: { code: { type: string }, message: { type: string }, retryable: { type: boolean } }
+          properties:
+            code: { type: string, description: Includes RESULT_TOO_LARGE and COMMAND_OUTPUT_UNPARSABLE }
+            message: { type: string }
+            retryable: { type: boolean }
   responses:
-    OperationSuccess: { description: Synchronous operation completed or dry-run plan generated, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+    OperationSuccess: { description: Synchronous operation completed, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
     OperationAccepted: { description: Asynchronous or deferred task accepted, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
     ExperimentalOperationSuccess:
       description: Experimental ACL operation completed
@@ -497,4 +519,4 @@ components:
     Forbidden: { description: Permission denied, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
     NotFound: { description: Resource not found, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
     Conflict: { description: Idempotency or state conflict, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
-    Unprocessable: { description: Plugin or capability not supported, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
+    Unprocessable: { description: Unsupported capability, result too large, or unparseable output, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
