@@ -114,6 +114,7 @@ components:
   schemas:
     OperationOptions:
       type: object
+      additionalProperties: false
       properties:
         execution_mode:
           type: string
@@ -123,29 +124,39 @@ components:
         save_config: { type: boolean, default: false }
         confirm_risk: { type: boolean, default: false }
     CreateVLANRequest:
-      allOf:
-        - $ref: '#/components/schemas/OperationOptions'
-        - type: object
-          additionalProperties: false
-          required: [vlan_id]
-          properties:
-            vlan_id: { type: integer, minimum: 1, maximum: 4094 }
-            name:
-              type: string
-              maxLength: 64
-              pattern: '^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$'
+      type: object
+      additionalProperties: false
+      required: [vlan_id]
+      properties:
+        vlan_id: { type: integer, minimum: 1, maximum: 4094 }
+        name:
+          type: string
+          maxLength: 64
+          pattern: '^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$'
+        execution_mode:
+          type: string
+          enum: [SYNC, ASYNC]
+          default: SYNC
+        dry_run: { type: boolean, default: false }
+        save_config: { type: boolean, default: false }
+        confirm_risk: { type: boolean, default: false }
     UpdateVLANRequest:
-      allOf:
-        - $ref: '#/components/schemas/OperationOptions'
-        - type: object
-          additionalProperties: false
-          required: [name]
-          properties:
-            name:
-              type: string
-              minLength: 1
-              maxLength: 64
-              pattern: '^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$'
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: '^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$'
+        execution_mode:
+          type: string
+          enum: [SYNC, ASYNC]
+          default: SYNC
+        dry_run: { type: boolean, default: false }
+        save_config: { type: boolean, default: false }
+        confirm_risk: { type: boolean, default: false }
     SuccessEnvelope:
       type: object
       required: [request_id, success, data]
