@@ -14,8 +14,10 @@ import (
 type ErrorHandlerFunc func(http.ResponseWriter, *http.Request) error
 
 // AdaptErrorHandler converts returned errors into the standard JSON envelope.
-func AdaptErrorHandler(handler ErrorHandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+// The interface return type allows transport middleware to compose wrappers
+// without depending on the concrete http.HandlerFunc implementation.
+func AdaptErrorHandler(handler ErrorHandlerFunc) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if handler == nil {
 			WriteError(w, r, errors.New("nil error handler"))
 			return
@@ -23,7 +25,7 @@ func AdaptErrorHandler(handler ErrorHandlerFunc) http.HandlerFunc {
 		if err := handler(w, r); err != nil {
 			WriteError(w, r, err)
 		}
-	}
+	})
 }
 
 type errorEnvelope struct {
