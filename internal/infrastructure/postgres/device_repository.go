@@ -70,7 +70,7 @@ func (r *DeviceRepository) List(ctx context.Context, filter device.ListFilter) (
 	}
 
 	conditions := []string{"deleted_at IS NULL"}
-	args := make([]any, 0, 4)
+	args := make([]any, 0, 5)
 	if filter.Vendor != nil {
 		if err := filter.Vendor.Validate(); err != nil {
 			return nil, apperror.Wrap(apperror.CodeValidationError, "", err)
@@ -84,6 +84,11 @@ func (r *DeviceRepository) List(ctx context.Context, filter device.ListFilter) (
 		}
 		args = append(args, string(*filter.Status))
 		conditions = append(conditions, fmt.Sprintf("status = $%d", len(args)))
+	}
+	if keyword := strings.TrimSpace(filter.Keyword); keyword != "" {
+		args = append(args, keyword)
+		placeholder := fmt.Sprintf("$%d", len(args))
+		conditions = append(conditions, "(name ILIKE '%' || "+placeholder+" || '%' OR host ILIKE '%' || "+placeholder+" || '%' OR model ILIKE '%' || "+placeholder+" || '%' OR os_version ILIKE '%' || "+placeholder+" || '%')")
 	}
 	args = append(args, limit, filter.Offset)
 	query := `SELECT ` + deviceColumns + ` FROM switches WHERE ` + strings.Join(conditions, " AND ") +
