@@ -1,0 +1,266 @@
+openapi: 3.1.0
+info:
+  title: Switch Manager Batch Operations API
+  version: 0.5.0
+  description: >-
+    Durable batch operations built on Parent/Child tasks. Parent tasks never open
+    SSH sessions. Child tasks execute independently through the normal scheduler,
+    global concurrency guard, per-device lock, plugin plan, and audit path.
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+paths:
+  /batch-operations:
+    post:
+      operationId: createBatchOperation
+      summary: Create one Parent task and one Child task per target switch
+      description: >-
+        Every target is preflighted before the transaction is committed. Parent,
+        children, batch items, and audits are created atomically. Query operations
+        require operation.query on every target; configuration operations require
+        operation.config on every target.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchOperationRequest'
+      responses:
+        '202':
+          description: Batch accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchEnvelope'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /batch-operations/{batchId}:
+    get:
+      operationId: getBatchOperation
+      summary: Get the database-derived Parent aggregate and ordered Child results
+      x-required-permission: task.read
+      parameters:
+        - $ref: '#/components/parameters/BatchID'
+      responses:
+        '200':
+          description: Batch snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchEnvelope'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /batch-operations/{batchId}:cancel:
+    post:
+      operationId: cancelBatchOperation
+      summary: Request cancellation for every nonterminal Child task
+      description: >-
+        Pending and queued children become CANCELLED immediately. Running children
+        receive cooperative cancellation. Completed children are never rolled back.
+      x-required-permission: task.cancel
+      parameters:
+        - $ref: '#/components/parameters/BatchID'
+      responses:
+        '202':
+          description: Cancellation accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchEnvelope'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /batch-operations/{batchId}:retry-failed:
+    post:
+      operationId: retryFailedBatchChildren
+      summary: Create a new Batch containing only FAILED and INTERRUPTED children
+      x-required-permission: task.cancel
+      parameters:
+        - $ref: '#/components/parameters/BatchID'
+      responses:
+        '202':
+          description: Retry batch accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchEnvelope'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    BatchID:
+      name: batchId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    BatchOperationRequest:
+      type: object
+      additionalProperties: false
+      required: [target_switch_ids, operation]
+      properties:
+        target_switch_ids:
+          type: array
+          minItems: 1
+          maxItems: 500
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        operation:
+          type: string
+          pattern: '^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$'
+        parameters:
+          type: object
+          additionalProperties: true
+        continue_on_failure:
+          type: boolean
+          default: true
+          description: >-
+            When false, the first failed, partial, or interrupted Child causes all
+            still-pending or queued Children to be cancelled. Running Children are
+            not force-killed and successful Children are not rolled back.
+        dry_run:
+          type: boolean
+          default: false
+        save_config:
+          type: boolean
+          default: false
+        confirm_risk:
+          type: boolean
+          default: false
+    BatchStatus:
+      type: string
+      enum: [PENDING, QUEUED, RUNNING, SUCCESS, PARTIAL_SUCCESS, FAILED, CANCELLED, INTERRUPTED]
+    BatchItem:
+      type: object
+      additionalProperties: false
+      required: [sequence_no, device_id, child_task_id, status]
+      properties:
+        sequence_no:
+          type: integer
+          minimum: 1
+        device_id:
+          type: string
+          format: uuid
+        child_task_id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/BatchStatus'
+        error_code:
+          type: string
+        retry_of:
+          type: string
+          format: uuid
+        result:
+          oneOf:
+            - type: object
+            - type: array
+    BatchOperation:
+      type: object
+      additionalProperties: false
+      required:
+        - batch_id
+        - parent_task_id
+        - operation
+        - status
+        - continue_on_failure
+        - total_count
+        - success_count
+        - failed_count
+        - cancelled_count
+        - items
+      properties:
+        batch_id:
+          type: string
+          format: uuid
+        parent_task_id:
+          type: string
+          format: uuid
+        retry_of_batch_id:
+          type: string
+          format: uuid
+        operation:
+          type: string
+        status:
+          $ref: '#/components/schemas/BatchStatus'
+        continue_on_failure:
+          type: boolean
+        total_count:
+          type: integer
+          minimum: 1
+        success_count:
+          type: integer
+          minimum: 0
+        failed_count:
+          type: integer
+          minimum: 0
+        cancelled_count:
+          type: integer
+          minimum: 0
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/BatchItem'
+    BatchEnvelope:
+      type: object
+      required: [request_id, success, data]
+      properties:
+        request_id:
+          type: string
+        success:
+          const: true
+        data:
+          $ref: '#/components/schemas/BatchOperation'
+    ErrorEnvelope:
+      type: object
+      required: [request_id, success, error]
+      properties:
+        request_id:
+          type: string
+        success:
+          const: false
+        error:
+          type: object
+          required: [code, message, retryable]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            retryable: { type: boolean }
+  responses:
+    BadRequest:
+      description: Validation error
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    Unauthorized:
+      description: Authentication required
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    Forbidden:
+      description: Permission denied for at least one target or action
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    NotFound:
+      description: Batch not found
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    Conflict:
+      description: Batch state does not allow the requested action
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    Unprocessable:
+      description: At least one target plugin or device does not support the operation
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
