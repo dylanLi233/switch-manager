@@ -27,6 +27,10 @@ const (
 	OperationACLCreate OperationName = "acl.create"
 	OperationACLUpdate OperationName = "acl.update"
 	OperationACLDelete OperationName = "acl.delete"
+
+	OperationMACTableList    OperationName = "mac_table.list"
+	OperationARPTableList    OperationName = "arp_table.list"
+	OperationDeviceStatusGet OperationName = "device_status.get"
 )
 
 // InterfaceNameValidator is an optional plugin extension. Interface syntax is
