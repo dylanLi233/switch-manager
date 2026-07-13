@@ -125,6 +125,9 @@ func (h *InventoryHandlers) updateCredential(w http.ResponseWriter, r *http.Requ
 	if err := decodeStrictJSON(r, &body); err != nil {
 		return err
 	}
+	if body.Name == nil && body.Type == nil && body.Username == nil && body.Password == nil && body.PrivateKey == nil && body.Passphrase == nil {
+		return apperror.New(apperror.CodeValidationError, "")
+	}
 	value, err := h.service.UpdateCredential(r.Context(), r.PathValue("credentialID"), inventorysvc.CredentialPatch{Name: body.Name, Type: body.Type, Username: body.Username, Password: body.Password, PrivateKey: body.PrivateKey, Passphrase: body.Passphrase})
 	if err != nil {
 		return err
@@ -209,6 +212,9 @@ func (h *InventoryHandlers) updateDevice(w http.ResponseWriter, r *http.Request)
 	}
 	if err := decodeStrictJSON(r, &body); err != nil {
 		return err
+	}
+	if body.Name == nil && body.Host == nil && body.SSHPort == nil && body.CredentialID == nil && body.Vendor == nil && body.Model == nil && body.OSVersion == nil && body.DetectMode == nil && body.Status == nil {
+		return apperror.New(apperror.CodeValidationError, "")
 	}
 	value, err := h.service.UpdateDevice(r.Context(), r.PathValue("switchID"), inventorysvc.DevicePatch{Name: body.Name, Host: body.Host, SSHPort: body.SSHPort, CredentialID: body.CredentialID, Vendor: body.Vendor, Model: body.Model, OSVersion: body.OSVersion, DetectMode: body.DetectMode, Status: body.Status})
 	if err != nil {
