@@ -34,7 +34,7 @@ func (p *Plugin) Metadata() pluginapi.Metadata {
 	return pluginapi.Metadata{
 		Name:          "fake-" + strings.ToLower(string(p.vendor)),
 		Vendor:        p.vendor,
-		PluginVersion: pluginapi.Version{Major: 1, Minor: 2, Patch: 0},
+		PluginVersion: pluginapi.Version{Major: 1, Minor: 3, Patch: 0},
 		SDKVersion:    pluginapi.CurrentSDKVersion(),
 		Operations: []pluginapi.OperationName{
 			OperationEchoQuery, OperationEchoConfig, OperationSaveConfig,
@@ -45,6 +45,12 @@ func (p *Plugin) Metadata() pluginapi.Metadata {
 			pluginapi.OperationInterfaceEnable, pluginapi.OperationInterfaceDisable,
 			pluginapi.OperationInterfaceAccess, pluginapi.OperationInterfaceTrunk,
 			pluginapi.OperationInterfaceVLANAdd, pluginapi.OperationInterfaceVLANRemove,
+			pluginapi.OperationRouteList, pluginapi.OperationRouteGet,
+			pluginapi.OperationRouteCreate, pluginapi.OperationRouteUpdate,
+			pluginapi.OperationRouteDelete,
+			pluginapi.OperationACLList, pluginapi.OperationACLGet,
+			pluginapi.OperationACLCreate, pluginapi.OperationACLUpdate,
+			pluginapi.OperationACLDelete,
 		},
 	}
 }
@@ -91,6 +97,10 @@ func (p *Plugin) Capabilities(_ context.Context, info pluginapi.DeviceInfo) (plu
 		pluginapi.OperationInterfaceEnable, pluginapi.OperationInterfaceDisable,
 		pluginapi.OperationInterfaceAccess, pluginapi.OperationInterfaceTrunk,
 		pluginapi.OperationInterfaceVLANAdd, pluginapi.OperationInterfaceVLANRemove,
+		pluginapi.OperationRouteList, pluginapi.OperationRouteGet,
+		pluginapi.OperationRouteCreate, pluginapi.OperationRouteUpdate, pluginapi.OperationRouteDelete,
+		pluginapi.OperationACLList, pluginapi.OperationACLGet,
+		pluginapi.OperationACLCreate, pluginapi.OperationACLUpdate, pluginapi.OperationACLDelete,
 	}
 	for _, operation := range operations {
 		level, reason := pluginapi.SupportUnsupported, "fake model is unknown"
@@ -174,6 +184,11 @@ func (p *Plugin) BuildPlan(ctx context.Context, request pluginapi.PlanRequest) (
 		pluginapi.OperationInterfaceAccess, pluginapi.OperationInterfaceTrunk,
 		pluginapi.OperationInterfaceVLANAdd, pluginapi.OperationInterfaceVLANRemove:
 		commandText, risk, enterConfig, err = interfaceCommand(p, request)
+	case pluginapi.OperationRouteList, pluginapi.OperationRouteGet,
+		pluginapi.OperationRouteCreate, pluginapi.OperationRouteUpdate, pluginapi.OperationRouteDelete,
+		pluginapi.OperationACLList, pluginapi.OperationACLGet,
+		pluginapi.OperationACLCreate, pluginapi.OperationACLUpdate, pluginapi.OperationACLDelete:
+		commandText, risk, enterConfig, err = routeACLCommand(p, request)
 	default:
 		return pluginapi.ExecutionPlan{}, pluginapi.NewError(pluginapi.ErrorUnsupportedOperation, "operation is not declared")
 	}
@@ -207,17 +222,24 @@ func (p *Plugin) ParseResult(_ context.Context, plan pluginapi.ExecutionPlan, tr
 	result.Commands = commandResults
 	if result.Status == pluginapi.ResultSuccess {
 		last := transcript.Commands[len(transcript.Commands)-1]
-		if isVLANOperation(plan.Operation) || isInterfaceOperation(plan.Operation) {
+		if isVLANOperation(plan.Operation) || isInterfaceOperation(plan.Operation) || isRouteACLOperation(plan.Operation) {
 			var data any
 			if err := json.Unmarshal([]byte(last.Output), &data); err != nil {
 				return pluginapi.OperationResult{}, pluginapi.WrapError(pluginapi.ErrorOutputUnparsable, "fake structured output is invalid JSON", err)
 			}
-			if isVLANOperation(plan.Operation) {
+			switch {
+			case isVLANOperation(plan.Operation):
 				if err := validateVLANOutput(plan.Operation, data); err != nil {
 					return pluginapi.OperationResult{}, pluginapi.WrapError(pluginapi.ErrorOutputUnparsable, "fake VLAN output has an invalid schema", err)
 				}
-			} else if err := validateInterfaceOutput(plan.Operation, data); err != nil {
-				return pluginapi.OperationResult{}, pluginapi.WrapError(pluginapi.ErrorOutputUnparsable, "fake interface output has an invalid schema", err)
+			case isInterfaceOperation(plan.Operation):
+				if err := validateInterfaceOutput(p, plan.Operation, data); err != nil {
+					return pluginapi.OperationResult{}, pluginapi.WrapError(pluginapi.ErrorOutputUnparsable, "fake interface output has an invalid schema", err)
+				}
+			case isRouteACLOperation(plan.Operation):
+				if err := validateRouteACLOutput(p, plan.Operation, data); err != nil {
+					return pluginapi.OperationResult{}, pluginapi.WrapError(pluginapi.ErrorOutputUnparsable, "fake route or ACL output has an invalid schema", err)
+				}
 			}
 			result.Data = data
 		} else {
