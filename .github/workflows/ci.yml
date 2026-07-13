@@ -54,7 +54,17 @@ jobs:
           path: unit-test.log
           if-no-files-found: ignore
       - name: Race tests
-        run: go test -race ./...
+        shell: bash
+        run: |
+          set -o pipefail
+          go test -race ./... 2>&1 | tee race-test.log
+      - name: Upload race test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: race-test-log
+          path: race-test.log
+          if-no-files-found: ignore
       - name: Vet
         run: go vet ./...
       - name: Migration integration tests
