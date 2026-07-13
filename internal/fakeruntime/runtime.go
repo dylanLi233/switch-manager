@@ -82,6 +82,7 @@ func (f *Factory) Detect(ctx context.Context, managed device.Device, _ inventory
 			"route.list", "route.get", "route.create", "route.update", "route.delete",
 			"acl.list", "acl.get", "acl.create", "acl.update", "acl.delete",
 			"mac_table.list", "arp_table.list", "device_status.get", "config.save",
+			"command.execute_readonly", "command.execute_config",
 		},
 	}, nil
 }
@@ -134,6 +135,15 @@ func (s *session) execute(text string) (string, error) {
 	case strings.HasPrefix(text, "fake.mac_table.list ") || strings.HasPrefix(text, "fake.arp_table.list ") || text == "fake.device_status.get": return s.executeTelemetry(text)
 	case strings.HasPrefix(text, "fake.echo.query ") || strings.HasPrefix(text, "fake.echo.config "):
 		_, quoted, ok := strings.Cut(text, " "); if !ok { return "", apperror.New(apperror.CodeCommandRejected, "") }; value, err := strconv.Unquote(quoted); if err != nil { return "", apperror.Wrap(apperror.CodeCommandRejected, "", err) }; return value, nil
+	case strings.HasPrefix(text, "fake.show "):
+		value := strings.TrimPrefix(text, "fake.show ")
+		switch value {
+		case "secret": return "token=secret-token", nil
+		case "large": return strings.Repeat("x", 5000), nil
+		default: return "readonly:" + value, nil
+		}
+	case strings.HasPrefix(text, "fake.set "):
+		return "configured:" + strings.TrimPrefix(text, "fake.set "), nil
 	default: return "", apperror.New(apperror.CodeCommandRejected, "")
 	}
 }
