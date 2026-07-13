@@ -9,21 +9,18 @@ import (
 )
 
 func TestNewRejectsNilLogger(t *testing.T) {
-	t.Parallel()
 	if _, err := New(context.Background(), config.Default(), nil); err == nil {
 		t.Fatal("expected error")
 	}
 }
 
 func TestNewRejectsNilContext(t *testing.T) {
-	t.Parallel()
 	if _, err := New(nil, config.Default(), slog.Default()); err == nil {
 		t.Fatal("expected error")
 	}
 }
 
 func TestNewAcceptsValidConfig(t *testing.T) {
-	t.Parallel()
 	application, err := New(context.Background(), config.Default(), slog.Default())
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
