@@ -161,7 +161,7 @@ func isInterfaceOperation(name pluginapi.OperationName) bool {
 	}
 }
 
-func validateInterfaceOutput(operation pluginapi.OperationName, data any) error {
+func (p *Plugin) validateInterfaceOutput(operation pluginapi.OperationName, data any) error {
 	object, ok := data.(map[string]any)
 	if !ok {
 		return fmt.Errorf("result must be an object")
@@ -172,33 +172,57 @@ func validateInterfaceOutput(operation pluginapi.OperationName, data any) error 
 			return fmt.Errorf("interfaces array is required")
 		}
 		for _, item := range items {
-			if err := validateInterfaceObject(item); err != nil {
+			if err := p.validateInterfaceObject(item); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
-	return validateInterfaceObject(object["interface"])
+	return p.validateInterfaceObject(object["interface"])
 }
 
-func validateInterfaceObject(value any) error {
+func (p *Plugin) validateInterfaceObject(value any) error {
 	object, ok := value.(map[string]any)
 	if !ok {
 		return fmt.Errorf("interface object is required")
 	}
-	name, _ := object["name"].(string)
-	admin, _ := object["admin_state"].(string)
-	oper, _ := object["oper_state"].(string)
-	mode, _ := object["mode"].(string)
+	name, ok := object["name"].(string)
+	if !ok || p.ValidateInterfaceName(name) != nil {
+		return fmt.Errorf("valid fake interface name is required")
+	}
+	admin, ok := object["admin_state"].(string)
+	if !ok {
+		return fmt.Errorf("admin_state string is required")
+	}
+	oper, ok := object["oper_state"].(string)
+	if !ok {
+		return fmt.Errorf("oper_state string is required")
+	}
+	mode, ok := object["mode"].(string)
+	if !ok {
+		return fmt.Errorf("mode string is required")
+	}
 	view := switchinterface.Interface{Name: name, AdminState: switchinterface.AdminState(admin), OperState: switchinterface.OperState(oper), Mode: switchinterface.Mode(mode)}
 	if raw, exists := object["access_vlan"]; exists {
-		view.AccessVLAN, _ = integerParameter(raw)
+		parsed, err := integerParameter(raw)
+		if err != nil {
+			return fmt.Errorf("access_vlan must be an integer")
+		}
+		view.AccessVLAN = parsed
 	}
 	if raw, exists := object["native_vlan"]; exists {
-		view.NativeVLAN, _ = integerParameter(raw)
+		parsed, err := integerParameter(raw)
+		if err != nil {
+			return fmt.Errorf("native_vlan must be an integer")
+		}
+		view.NativeVLAN = parsed
 	}
 	if raw, exists := object["allowed_vlans"]; exists {
-		view.AllowedVLANs, _ = integerSliceParameter(raw)
+		parsed, err := integerSliceParameter(raw)
+		if err != nil {
+			return fmt.Errorf("allowed_vlans must be an integer array")
+		}
+		view.AllowedVLANs = parsed
 		sort.Ints(view.AllowedVLANs)
 	}
 	return view.Validate()
