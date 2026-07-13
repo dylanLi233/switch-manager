@@ -4,10 +4,14 @@ package fake
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/dylanLi233/switch-manager/internal/domain/vlan"
 	"github.com/dylanLi233/switch-manager/pkg/pluginapi"
 )
 
@@ -30,9 +34,14 @@ func (p *Plugin) Metadata() pluginapi.Metadata {
 	return pluginapi.Metadata{
 		Name:          "fake-" + strings.ToLower(string(p.vendor)),
 		Vendor:        p.vendor,
-		PluginVersion: pluginapi.Version{Major: 1, Minor: 0, Patch: 0},
+		PluginVersion: pluginapi.Version{Major: 1, Minor: 1, Patch: 0},
 		SDKVersion:    pluginapi.CurrentSDKVersion(),
-		Operations:    []pluginapi.OperationName{OperationEchoQuery, OperationEchoConfig, OperationSaveConfig},
+		Operations: []pluginapi.OperationName{
+			OperationEchoQuery, OperationEchoConfig, OperationSaveConfig,
+			pluginapi.OperationVLANList, pluginapi.OperationVLANGet,
+			pluginapi.OperationVLANCreate, pluginapi.OperationVLANUpdate,
+			pluginapi.OperationVLANDelete,
+		},
 	}
 }
 
@@ -69,13 +78,21 @@ func (p *Plugin) Capabilities(_ context.Context, info pluginapi.DeviceInfo) (plu
 	if info.Vendor != p.vendor {
 		return pluginapi.CapabilitySet{}, pluginapi.NewError(pluginapi.ErrorInvalidRequest, "device vendor does not match plugin")
 	}
-	config := pluginapi.Capability{Operation: OperationEchoConfig, Level: pluginapi.SupportUnsupported, Reason: "fake model is unknown"}
-	save := pluginapi.Capability{Operation: OperationSaveConfig, Level: pluginapi.SupportUnsupported, Reason: "fake model is unknown"}
-	if info.Model == "FAKE-SW" {
-		config.Level, config.Reason = pluginapi.SupportSupported, ""
-		save.Level, save.Reason = pluginapi.SupportSupported, ""
+	capabilities := []pluginapi.Capability{{Operation: OperationEchoQuery, Level: pluginapi.SupportSupported}}
+	configOperations := []pluginapi.OperationName{
+		OperationEchoConfig, OperationSaveConfig,
+		pluginapi.OperationVLANList, pluginapi.OperationVLANGet,
+		pluginapi.OperationVLANCreate, pluginapi.OperationVLANUpdate,
+		pluginapi.OperationVLANDelete,
 	}
-	return pluginapi.NewCapabilitySet(pluginapi.Capability{Operation: OperationEchoQuery, Level: pluginapi.SupportSupported}, config, save)
+	for _, operation := range configOperations {
+		level, reason := pluginapi.SupportUnsupported, "fake model is unknown"
+		if info.Model == "FAKE-SW" {
+			level, reason = pluginapi.SupportSupported, ""
+		}
+		capabilities = append(capabilities, pluginapi.Capability{Operation: operation, Level: level, Reason: reason})
+	}
+	return pluginapi.NewCapabilitySet(capabilities...)
 }
 
 func (p *Plugin) BuildPlan(ctx context.Context, request pluginapi.PlanRequest) (pluginapi.ExecutionPlan, error) {
@@ -96,31 +113,60 @@ func (p *Plugin) BuildPlan(ctx context.Context, request pluginapi.PlanRequest) (
 
 	commandText, risk, enterConfig := "", pluginapi.RiskLow, false
 	switch request.Operation {
-	case OperationEchoQuery:
-		if request.Class != pluginapi.ClassQuery {
-			return pluginapi.ExecutionPlan{}, pluginapi.NewError(pluginapi.ErrorInvalidRequest, "diagnostic.echo requires QUERY class")
+	case OperationEchoQuery, OperationEchoConfig:
+		message, err := requireMessage(request.Parameters)
+		if err != nil {
+			return pluginapi.ExecutionPlan{}, err
 		}
-		message, ok := request.Parameters["message"].(string)
-		if !ok || strings.TrimSpace(message) == "" || len(message) > 256 || strings.ContainsAny(message, "\r\n") {
-			return pluginapi.ExecutionPlan{}, pluginapi.NewError(pluginapi.ErrorInvalidRequest, "message must be a non-empty single-line string up to 256 bytes")
+		if request.Operation == OperationEchoQuery {
+			if request.Class != pluginapi.ClassQuery {
+				return pluginapi.ExecutionPlan{}, pluginapi.NewError(pluginapi.ErrorInvalidRequest, "diagnostic.echo requires QUERY class")
+			}
+			commandText = "fake.echo.query " + strconv.Quote(message)
+		} else {
+			if request.Class != pluginapi.ClassConfig {
+				return pluginapi.ExecutionPlan{}, pluginapi.NewError(pluginapi.ErrorInvalidRequest, "configuration.echo requires CONFIG class")
+			}
+			commandText, risk, enterConfig = "fake.echo.config "+strconv.Quote(message), pluginapi.RiskMedium, true
 		}
-		commandText = "fake.echo.query " + strconv.Quote(message)
-	case OperationEchoConfig:
-		if request.Class != pluginapi.ClassConfig {
-			return pluginapi.ExecutionPlan{}, pluginapi.NewError(pluginapi.ErrorInvalidRequest, "configuration.echo requires CONFIG class")
-		}
-		message, ok := request.Parameters["message"].(string)
-		if !ok || strings.TrimSpace(message) == "" || len(message) > 256 || strings.ContainsAny(message, "\r\n") {
-			return pluginapi.ExecutionPlan{}, pluginapi.NewError(pluginapi.ErrorInvalidRequest, "message must be a non-empty single-line string up to 256 bytes")
-		}
-		commandText, risk, enterConfig = "fake.echo.config "+strconv.Quote(message), pluginapi.RiskMedium, true
 	case OperationSaveConfig:
-		if request.Class != pluginapi.ClassConfig || request.SaveConfig {
-			return pluginapi.ExecutionPlan{}, pluginapi.NewError(pluginapi.ErrorInvalidRequest, "config.save requires CONFIG class and cannot recursively request save_config")
+		if request.Class != pluginapi.ClassConfig || request.SaveConfig || len(request.Parameters) != 0 {
+			return pluginapi.ExecutionPlan{}, pluginapi.NewError(pluginapi.ErrorInvalidRequest, "config.save requires CONFIG class, no parameters, and cannot recursively request save_config")
 		}
 		commandText, risk = "fake.config.save", pluginapi.RiskMedium
+	case pluginapi.OperationVLANList:
+		if request.Class != pluginapi.ClassQuery || len(request.Parameters) != 0 {
+			return pluginapi.ExecutionPlan{}, pluginapi.NewError(pluginapi.ErrorInvalidRequest, "vlan.list requires QUERY class and no parameters")
+		}
+		commandText = "fake.vlan.list"
+	case pluginapi.OperationVLANGet:
+		if request.Class != pluginapi.ClassQuery {
+			return pluginapi.ExecutionPlan{}, pluginapi.NewError(pluginapi.ErrorInvalidRequest, "vlan.get requires QUERY class")
+		}
+		commandText, err = vlanCommand("fake.vlan.get", request.Parameters, false, false)
+	case pluginapi.OperationVLANCreate:
+		if request.Class != pluginapi.ClassConfig {
+			return pluginapi.ExecutionPlan{}, pluginapi.NewError(pluginapi.ErrorInvalidRequest, "vlan.create requires CONFIG class")
+		}
+		commandText, err = vlanCommand("fake.vlan.create", request.Parameters, true, false)
+		risk, enterConfig = pluginapi.RiskMedium, true
+	case pluginapi.OperationVLANUpdate:
+		if request.Class != pluginapi.ClassConfig {
+			return pluginapi.ExecutionPlan{}, pluginapi.NewError(pluginapi.ErrorInvalidRequest, "vlan.update requires CONFIG class")
+		}
+		commandText, err = vlanCommand("fake.vlan.update", request.Parameters, true, true)
+		risk, enterConfig = pluginapi.RiskMedium, true
+	case pluginapi.OperationVLANDelete:
+		if request.Class != pluginapi.ClassConfig {
+			return pluginapi.ExecutionPlan{}, pluginapi.NewError(pluginapi.ErrorInvalidRequest, "vlan.delete requires CONFIG class")
+		}
+		commandText, err = vlanCommand("fake.vlan.delete", request.Parameters, false, false)
+		risk, enterConfig = pluginapi.RiskMedium, true
 	default:
 		return pluginapi.ExecutionPlan{}, pluginapi.NewError(pluginapi.ErrorUnsupportedOperation, "operation is not declared")
+	}
+	if err != nil {
+		return pluginapi.ExecutionPlan{}, err
 	}
 
 	metadata := p.Metadata()
@@ -139,20 +185,172 @@ func (p *Plugin) ParseResult(_ context.Context, plan pluginapi.ExecutionPlan, tr
 		return pluginapi.OperationResult{}, pluginapi.WrapError(pluginapi.ErrorOutputUnparsable, "execution transcript is invalid", err)
 	}
 	commandResults := make([]pluginapi.CommandExecution, 0, len(transcript.Commands))
-	outputs := make([]string, 0, len(transcript.Commands))
 	result := pluginapi.OperationResult{Status: pluginapi.ResultSuccess, StartedAt: transcript.StartedAt, FinishedAt: transcript.FinishedAt}
 	for _, record := range transcript.Commands {
 		commandResults = append(commandResults, pluginapi.CommandExecution{Sequence: record.Sequence, Succeeded: record.Succeeded, OutputTruncated: record.OutputTruncated, ErrorCode: record.ErrorCode, Duration: record.Duration})
-		outputs = append(outputs, record.Output)
 		if !record.Succeeded && result.Status == pluginapi.ResultSuccess {
 			result.Status, result.ErrorCode, result.ErrorMessage = pluginapi.ResultFailed, record.ErrorCode, "fake command execution failed"
 		}
 	}
-	result.Commands, result.Data = commandResults, map[string]any{"outputs": outputs}
+	result.Commands = commandResults
+	if result.Status == pluginapi.ResultSuccess {
+		last := transcript.Commands[len(transcript.Commands)-1]
+		if isVLANOperation(plan.Operation) {
+			var data any
+			if err := json.Unmarshal([]byte(last.Output), &data); err != nil {
+				return pluginapi.OperationResult{}, pluginapi.WrapError(pluginapi.ErrorOutputUnparsable, "fake VLAN output is invalid JSON", err)
+			}
+			if err := validateVLANOutput(plan.Operation, data); err != nil {
+				return pluginapi.OperationResult{}, pluginapi.WrapError(pluginapi.ErrorOutputUnparsable, "fake VLAN output has an invalid schema", err)
+			}
+			result.Data = data
+		} else {
+			outputs := make([]string, 0, len(transcript.Commands))
+			for _, record := range transcript.Commands {
+				outputs = append(outputs, record.Output)
+			}
+			result.Data = map[string]any{"outputs": outputs}
+		}
+	}
 	if err := result.Validate(); err != nil {
 		return pluginapi.OperationResult{}, pluginapi.WrapError(pluginapi.ErrorOutputUnparsable, "fake normalized result is invalid", err)
 	}
 	return result, nil
+}
+
+func requireMessage(parameters map[string]any) (string, error) {
+	if len(parameters) != 1 {
+		return "", pluginapi.NewError(pluginapi.ErrorInvalidRequest, "message is the only supported parameter")
+	}
+	message, ok := parameters["message"].(string)
+	if !ok || strings.TrimSpace(message) == "" || len(message) > 256 || strings.ContainsAny(message, "\r\n") {
+		return "", pluginapi.NewError(pluginapi.ErrorInvalidRequest, "message must be a non-empty single-line string up to 256 bytes")
+	}
+	return message, nil
+}
+
+type vlanPayload struct {
+	VLANID int    `json:"vlan_id"`
+	Name   string `json:"name,omitempty"`
+}
+
+func vlanCommand(prefix string, parameters map[string]any, allowName, requireName bool) (string, error) {
+	allowed := 1
+	if allowName {
+		allowed = 2
+	}
+	if len(parameters) < 1 || len(parameters) > allowed {
+		return "", pluginapi.NewError(pluginapi.ErrorInvalidRequest, "VLAN parameters are invalid")
+	}
+	id, err := integerParameter(parameters["vlan_id"])
+	if err != nil || vlan.ValidateID(id) != nil {
+		return "", pluginapi.NewError(pluginapi.ErrorInvalidRequest, "vlan_id must be between 1 and 4094")
+	}
+	name := ""
+	if raw, exists := parameters["name"]; exists {
+		if !allowName {
+			return "", pluginapi.NewError(pluginapi.ErrorInvalidRequest, "name is not supported for this operation")
+		}
+		var ok bool
+		name, ok = raw.(string)
+		if !ok {
+			return "", pluginapi.NewError(pluginapi.ErrorInvalidRequest, "VLAN name must be a string")
+		}
+	}
+	name, err = vlan.NormalizeName(name, requireName)
+	if err != nil {
+		return "", pluginapi.WrapError(pluginapi.ErrorInvalidRequest, "VLAN name is invalid", err)
+	}
+	for key := range parameters {
+		if key != "vlan_id" && key != "name" {
+			return "", pluginapi.NewError(pluginapi.ErrorInvalidRequest, "unknown VLAN parameter")
+		}
+	}
+	encoded, err := json.Marshal(vlanPayload{VLANID: id, Name: name})
+	if err != nil {
+		return "", pluginapi.WrapError(pluginapi.ErrorPlanInvalid, "encode fake VLAN command", err)
+	}
+	return prefix + " " + string(encoded), nil
+}
+
+func integerParameter(value any) (int, error) {
+	switch typed := value.(type) {
+	case int:
+		return typed, nil
+	case int32:
+		return int(typed), nil
+	case int64:
+		return int(typed), nil
+	case float64:
+		if math.Trunc(typed) != typed || typed < math.MinInt || typed > math.MaxInt {
+			return 0, fmt.Errorf("not an integer")
+		}
+		return int(typed), nil
+	case json.Number:
+		parsed, err := typed.Int64()
+		return int(parsed), err
+	default:
+		return 0, fmt.Errorf("unsupported integer type %T", value)
+	}
+}
+
+func isVLANOperation(name pluginapi.OperationName) bool {
+	switch name {
+	case pluginapi.OperationVLANList, pluginapi.OperationVLANGet, pluginapi.OperationVLANCreate, pluginapi.OperationVLANUpdate, pluginapi.OperationVLANDelete:
+		return true
+	default:
+		return false
+	}
+}
+
+func validateVLANOutput(operation pluginapi.OperationName, data any) error {
+	object, ok := data.(map[string]any)
+	if !ok {
+		return fmt.Errorf("result must be an object")
+	}
+	switch operation {
+	case pluginapi.OperationVLANList:
+		items, ok := object["vlans"].([]any)
+		if !ok {
+			return fmt.Errorf("vlans array is required")
+		}
+		for _, item := range items {
+			if err := validateVLANObject(item); err != nil {
+				return err
+			}
+		}
+	case pluginapi.OperationVLANGet, pluginapi.OperationVLANCreate, pluginapi.OperationVLANUpdate:
+		if err := validateVLANObject(object["vlan"]); err != nil {
+			return err
+		}
+	case pluginapi.OperationVLANDelete:
+		deleted, ok := object["deleted"].(bool)
+		if !ok || !deleted {
+			return fmt.Errorf("deleted=true is required")
+		}
+		id, err := integerParameter(object["vlan_id"])
+		if err != nil || vlan.ValidateID(id) != nil {
+			return fmt.Errorf("valid vlan_id is required")
+		}
+	}
+	return nil
+}
+
+func validateVLANObject(value any) error {
+	object, ok := value.(map[string]any)
+	if !ok {
+		return fmt.Errorf("VLAN object is required")
+	}
+	id, err := integerParameter(object["vlan_id"])
+	if err != nil || vlan.ValidateID(id) != nil {
+		return fmt.Errorf("valid vlan_id is required")
+	}
+	name, ok := object["name"].(string)
+	if !ok {
+		return fmt.Errorf("VLAN name is required")
+	}
+	_, err = vlan.NormalizeName(name, false)
+	return err
 }
 
 var _ pluginapi.Plugin = (*Plugin)(nil)

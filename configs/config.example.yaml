@@ -31,3 +31,9 @@ authentication:
 #   SWITCH_MANAGER_SSH_PROMPT_PATTERN             (verified vendor prompt regex)
 #   SWITCH_MANAGER_SSH_PROMPT_FAMILY              (label returned by test-connection)
 #   SWITCH_MANAGER_SSH_TEST_TIMEOUT                (default: 10s)
+#
+# TASK-013 local/test Fake Runtime. It is disabled by default and requires the
+# inventory master key, JWT/RBAC, and PostgreSQL:
+#   SWITCH_MANAGER_FAKE_PLUGIN_ENABLED             (true/false, default false)
+#   SWITCH_MANAGER_OPERATION_WORKERS               (1-32, default 5)
+#   SWITCH_MANAGER_OPERATION_SYNC_WAIT_TIMEOUT     (default 10s, max 1m)

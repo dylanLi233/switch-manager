@@ -12,25 +12,33 @@ import (
 	"regexp"
 
 	"github.com/dylanLi233/switch-manager/internal/authn"
+	"github.com/dylanLi233/switch-manager/internal/concurrency"
 	"github.com/dylanLi233/switch-manager/internal/config"
+	"github.com/dylanLi233/switch-manager/internal/fakeruntime"
 	"github.com/dylanLi233/switch-manager/internal/health"
 	"github.com/dylanLi233/switch-manager/internal/infrastructure/postgres"
 	"github.com/dylanLi233/switch-manager/internal/inventorysvc"
+	"github.com/dylanLi233/switch-manager/internal/operationsvc"
+	"github.com/dylanLi233/switch-manager/internal/pluginregistry"
+	"github.com/dylanLi233/switch-manager/internal/scheduler"
 	"github.com/dylanLi233/switch-manager/internal/secretbox"
 	"github.com/dylanLi233/switch-manager/internal/sshprobe"
 	"github.com/dylanLi233/switch-manager/internal/transport/httpserver"
+	"github.com/dylanLi233/switch-manager/pkg/pluginapi"
+	fakeplugin "github.com/dylanLi233/switch-manager/plugins/fake"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 // App owns process-level dependencies and server lifecycle.
 type App struct {
-	cfg    config.Config
-	logger *slog.Logger
-	server *httpserver.Server
-	store  *postgres.Store
+	cfg        config.Config
+	logger     *slog.Logger
+	server     *httpserver.Server
+	store      *postgres.Store
+	dispatcher *scheduler.Scheduler
 }
 
-// New validates configuration and wires optional database-backed authentication.
+// New validates configuration and wires optional database-backed services.
 func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, error) {
 	if ctx == nil {
 		return nil, errors.New("bootstrap context is required")
@@ -45,13 +53,20 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	if err != nil {
 		return nil, fmt.Errorf("load inventory security configuration: %w", err)
 	}
+	fakeConfig, err := config.LoadFakeRuntimeEnvironment(os.LookupEnv)
+	if err != nil {
+		return nil, fmt.Errorf("load fake runtime configuration: %w", err)
+	}
 	if inventoryConfig.Enabled && !cfg.Authentication.Enabled {
 		return nil, errors.New("inventory API requires authentication to be enabled")
+	}
+	if fakeConfig.Enabled && !inventoryConfig.Enabled {
+		return nil, errors.New("fake plugin runtime requires the inventory API and credential master key")
 	}
 
 	app := &App{cfg: cfg, logger: logger}
 	checks := []health.Check{}
-	needsDatabase := cfg.Database.Required || cfg.Authentication.Enabled || inventoryConfig.Enabled
+	needsDatabase := cfg.Database.Required || cfg.Authentication.Enabled || inventoryConfig.Enabled || fakeConfig.Enabled
 	if needsDatabase {
 		store, err := postgres.Open(ctx, cfg.Database.DSN)
 		if err != nil {
@@ -70,7 +85,6 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 			return nil, fmt.Errorf("verify RBAC schema: %w", err)
 		}
 		checks = append(checks, health.CheckFunc{CheckName: "authorization_schema", Fn: accessRepository.CheckReady})
-
 		verifier, err := authn.NewJWTVerifierFromFile(cfg.Authentication.PublicKeyFile, authn.JWTConfig{
 			Issuer: cfg.Authentication.Issuer, Audience: cfg.Authentication.Audience,
 			KeyID: cfg.Authentication.KeyID, ClockSkew: cfg.Authentication.ClockSkew,
@@ -86,6 +100,11 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 			app.Close()
 			return nil, fmt.Errorf("initialize authentication service: %w", err)
 		}
+	}
+
+	var fakeFactory *fakeruntime.Factory
+	if fakeConfig.Enabled {
+		fakeFactory = fakeruntime.New()
 	}
 
 	if inventoryConfig.Enabled {
@@ -117,7 +136,11 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 			}
 		}
 		repositories := app.store.Repositories()
-		inventoryService, err := inventorysvc.New(repositories.Devices, repositories.Credentials, repositories.ExecutionCredentials, box, tester, nil)
+		var detector inventorysvc.IdentityDetector
+		if fakeFactory != nil {
+			detector = fakeFactory
+		}
+		inventoryService, err := inventorysvc.New(repositories.Devices, repositories.Credentials, repositories.ExecutionCredentials, box, tester, detector)
 		if err != nil {
 			app.Close()
 			return nil, fmt.Errorf("initialize inventory service: %w", err)
@@ -130,6 +153,59 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		registrars = append(registrars, handlers)
 	}
 
+	if fakeFactory != nil {
+		repositories := app.store.Repositories()
+		registry := pluginregistry.NewCurrent()
+		for _, vendor := range []pluginapi.Vendor{pluginapi.VendorHuawei, pluginapi.VendorH3C} {
+			plugin, err := fakeplugin.New(vendor)
+			if err != nil {
+				app.Close()
+				return nil, fmt.Errorf("initialize fake plugin %s: %w", vendor, err)
+			}
+			if err := registry.Register(plugin); err != nil {
+				app.Close()
+				return nil, fmt.Errorf("register fake plugin %s: %w", vendor, err)
+			}
+		}
+		planner, err := operationsvc.NewPlanner(repositories.Devices, registry)
+		if err != nil {
+			app.Close()
+			return nil, fmt.Errorf("initialize operation planner: %w", err)
+		}
+		guards, err := concurrency.NewController(concurrency.DefaultGlobalLimit)
+		if err != nil {
+			app.Close()
+			return nil, fmt.Errorf("initialize operation guards: %w", err)
+		}
+		executor, err := operationsvc.NewExecutor(planner, repositories.Audits, fakeFactory, guards)
+		if err != nil {
+			app.Close()
+			return nil, fmt.Errorf("initialize operation executor: %w", err)
+		}
+		dispatcher, err := scheduler.New(repositories.Tasks, executor, scheduler.Config{Workers: fakeConfig.Workers})
+		if err != nil {
+			app.Close()
+			return nil, fmt.Errorf("initialize task scheduler: %w", err)
+		}
+		committer, err := postgres.NewOperationSubmission(app.store)
+		if err != nil {
+			app.Close()
+			return nil, fmt.Errorf("initialize operation submission: %w", err)
+		}
+		operationService, err := operationsvc.NewService(repositories.Tasks, repositories.Audits, planner, dispatcher, committer, operationsvc.Config{SyncWaitTimeout: fakeConfig.SyncWaitTimeout})
+		if err != nil {
+			app.Close()
+			return nil, fmt.Errorf("initialize operation service: %w", err)
+		}
+		vlanHandlers, err := httpserver.NewVLANHandlers(operationService)
+		if err != nil {
+			app.Close()
+			return nil, fmt.Errorf("initialize VLAN handlers: %w", err)
+		}
+		registrars = append(registrars, vlanHandlers)
+		app.dispatcher = dispatcher
+	}
+
 	healthHandler := health.NewHandler(cfg.Server.ReadTimeout, checks...)
 	var router http.Handler
 	if authentication != nil {
@@ -137,13 +213,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	} else {
 		router = httpserver.NewRouter(healthHandler, cfg.Server.MaxRequestBytes)
 	}
-
-	app.server = httpserver.New(
-		router,
-		cfg.Server.ReadTimeout,
-		cfg.Server.WriteTimeout,
-		cfg.Server.ShutdownTimeout,
-	)
+	app.server = httpserver.New(router, cfg.Server.ReadTimeout, cfg.Server.WriteTimeout, cfg.Server.ShutdownTimeout)
 	return app, nil
 }
 
@@ -155,7 +225,7 @@ func (a *App) Close() {
 	}
 }
 
-// Run listens and serves until context cancellation.
+// Run listens and serves until context cancellation or a component fails.
 func (a *App) Run(ctx context.Context) error {
 	defer a.Close()
 	listener, err := net.Listen("tcp", a.cfg.Server.Listen)
@@ -163,9 +233,34 @@ func (a *App) Run(ctx context.Context) error {
 		return fmt.Errorf("listen on %s: %w", a.cfg.Server.Listen, err)
 	}
 	a.logger.Info("http server started", "address", listener.Addr().String())
-	if err := a.server.Serve(ctx, listener); err != nil {
-		return fmt.Errorf("serve HTTP: %w", err)
+	if a.dispatcher == nil {
+		if err := a.server.Serve(ctx, listener); err != nil {
+			return fmt.Errorf("serve HTTP: %w", err)
+		}
+		a.logger.Info("http server stopped")
+		return nil
 	}
-	a.logger.Info("http server stopped")
-	return nil
+
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	type componentResult struct {
+		name string
+		err  error
+	}
+	results := make(chan componentResult, 2)
+	go func() { results <- componentResult{name: "scheduler", err: a.dispatcher.Run(runCtx)} }()
+	go func() { results <- componentResult{name: "http", err: a.server.Serve(runCtx, listener)} }()
+	var firstErr error
+	for completed := 0; completed < 2; completed++ {
+		result := <-results
+		if result.err != nil && !errors.Is(result.err, context.Canceled) && firstErr == nil {
+			firstErr = fmt.Errorf("%s component: %w", result.name, result.err)
+			cancel()
+		}
+		if completed == 0 && ctx.Err() == nil {
+			cancel()
+		}
+	}
+	a.logger.Info("http server and task scheduler stopped")
+	return firstErr
 }
