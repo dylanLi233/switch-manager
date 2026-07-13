@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -10,9 +11,9 @@ import (
 	"time"
 
 	"github.com/dylanLi233/switch-manager/internal/apperror"
+	"github.com/dylanLi233/switch-manager/internal/domain/operation"
 	"github.com/dylanLi233/switch-manager/internal/domain/task"
 	"github.com/dylanLi233/switch-manager/internal/operationsvc"
-	"github.com/jackc/pgx/v5"
 )
 
 const batchColumns = `
@@ -192,7 +193,7 @@ func (s *BatchStore) RefreshBatch(ctx context.Context, id string, at time.Time) 
 		}
 		summary, _ := json.Marshal(map[string]any{"batch_id": id, "total_count": len(current.Items), "success_count": successCount, "failed_count": failedCount, "cancelled_count": cancelledCount, "status": aggregate})
 		parentStatus := task.StatusRunning
-		finishedAt := any(nil)
+		var finishedAt any
 		errorCode := ""
 		if aggregate.Terminal() {
 			parentStatus = aggregate
@@ -204,13 +205,18 @@ func (s *BatchStore) RefreshBatch(ctx context.Context, id string, at time.Time) 
 				errorCode = task.BatchErrorPartial
 			}
 		}
-		if _, err := repositories.Tasks.q.Exec(ctx, `
-			UPDATE tasks SET status=$2,result=$3::jsonb,error_code=NULLIF($4,''),finished_at=$5,version=version+1
-			WHERE id=$1::uuid AND task_type='BATCH_PARENT' AND status NOT IN ('SUCCESS','PARTIAL_SUCCESS','FAILED','CANCELLED','INTERRUPTED')`,
-			current.Parent.ID, string(parentStatus), summary, errorCode, finishedAt); err != nil {
-			return mapDatabaseError(err, "", "update batch parent")
+		parentWasTerminal := current.Parent.Status.Terminal()
+		needsParentUpdate := current.Parent.Status != parentStatus || !bytes.Equal(current.Parent.Result, summary) || current.Parent.ErrorCode != errorCode
+		if needsParentUpdate {
+			if _, err := repositories.Tasks.q.Exec(ctx, `
+				UPDATE tasks SET status=$2,result=$3::jsonb,error_code=NULLIF($4,''),
+					started_at=COALESCE(started_at,created_at),finished_at=$5,version=version+1
+				WHERE id=$1::uuid AND task_type='BATCH_PARENT'`,
+				current.Parent.ID, string(parentStatus), summary, errorCode, finishedAt); err != nil {
+				return mapDatabaseError(err, "", "update batch parent")
+			}
 		}
-		if aggregate.Terminal() {
+		if aggregate.Terminal() && !parentWasTerminal {
 			if _, err := repositories.Audits.Complete(ctx, current.Parent.ID, string(aggregate), errorCode, summary, at); err != nil {
 				return apperror.Wrap(apperror.CodeAuditUnavailable, "", err)
 			}
@@ -244,7 +250,7 @@ func loadBatchSnapshot(ctx context.Context, q DBTX, id string) (task.BatchSnapsh
 		&status, &snapshot.Batch.CreatedBy, &snapshot.Batch.CreatedAt, &snapshot.Batch.UpdatedAt); err != nil {
 		return task.BatchSnapshot{}, mapDatabaseError(err, apperror.CodeResourceNotFound, "get batch")
 	}
-	snapshot.Batch.Operation = operationName
+	snapshot.Batch.Operation = operation.Name(operationName)
 	snapshot.Batch.Status = task.Status(status)
 	parent, err := scanTask(q.QueryRow(ctx, `SELECT `+taskColumns+` FROM tasks WHERE id=$1::uuid`, snapshot.Batch.ParentTaskID))
 	if err != nil {
@@ -276,7 +282,7 @@ func loadBatchSnapshot(ctx context.Context, q DBTX, id string) (task.BatchSnapsh
 		}
 		child.Type = task.Type(taskType)
 		child.Status = task.Status(childStatus)
-		child.ExecutionMode = executionMode
+		child.ExecutionMode = operation.ExecutionMode(executionMode)
 		child.Payload = append(json.RawMessage(nil), payload...)
 		child.Result = append(json.RawMessage(nil), resultPayload...)
 		child.StartedAt = timePointer(startedAt)
@@ -295,4 +301,3 @@ func loadBatchSnapshot(ctx context.Context, q DBTX, id string) (task.BatchSnapsh
 }
 
 var _ operationsvc.BatchPersistence = (*BatchStore)(nil)
-var _ = pgx.ErrNoRows
