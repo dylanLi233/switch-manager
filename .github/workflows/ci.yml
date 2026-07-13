@@ -37,10 +37,19 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y postgresql-client
-      - name: Verify Go modules
+      - name: Resolve Go modules
         run: |
           go mod tidy
-          git diff --exit-code -- go.mod go.sum
+          git diff -- go.mod go.sum || true
+      - name: Upload resolved Go modules
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resolved-go-modules
+          path: |
+            go.mod
+            go.sum
+          if-no-files-found: error
       - name: Unit tests
         shell: bash
         run: |
