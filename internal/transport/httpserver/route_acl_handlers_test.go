@@ -6,12 +6,14 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dylanLi233/switch-manager/internal/apperror"
 	"github.com/dylanLi233/switch-manager/internal/domain/acl"
 	"github.com/dylanLi233/switch-manager/internal/domain/auth"
 	"github.com/dylanLi233/switch-manager/internal/domain/operation"
 	"github.com/dylanLi233/switch-manager/internal/domain/task"
+	"github.com/dylanLi233/switch-manager/internal/health"
 	"github.com/dylanLi233/switch-manager/internal/operationsvc"
 )
 
@@ -21,14 +23,12 @@ func routeACLRouter(t *testing.T, principal auth.Principal, submitter *operation
 	if err != nil {
 		t.Fatal(err)
 	}
-	return NewAuthenticatedRouter(testHealthHandler(), 1<<20, staticInventoryAuth{principal: principal}, handlers)
+	return NewAuthenticatedRouter(health.NewHandler(time.Second), 1<<20, staticInventoryAuth{principal: principal}, handlers)
 }
-
-func testHealthHandler() *healthHandlerAlias { return nil }
 
 func TestViewerCanReadRouteButCannotConfigure(t *testing.T) {
 	submitter := &operationSubmitterStub{submission: operationsvc.Submission{Task: task.Persisted{Task: task.Task{ID: "route-list", Status: task.StatusSuccess, Result: json.RawMessage(`{"dry_run":false,"operation":{"data":{"routes":[]}},"audit_completed":true}`)}}, Completed: true}}
-	router := routeACLRouterWithHealth(t, principal(auth.RoleViewer, auth.PermissionOperationQuery), submitter)
+	router := routeACLRouter(t, principal(auth.RoleViewer, auth.PermissionOperationQuery), submitter)
 	read := httptest.NewRecorder()
 	router.ServeHTTP(read, authorizedRequest(http.MethodGet, "/api/v1/switches/device/routes", ""))
 	if read.Code != http.StatusOK || submitter.calls != 1 {
@@ -43,7 +43,7 @@ func TestViewerCanReadRouteButCannotConfigure(t *testing.T) {
 
 func TestACLIsExplicitlyExperimentalAndTyped(t *testing.T) {
 	submitter := &operationSubmitterStub{submission: operationsvc.Submission{Task: task.Persisted{Task: task.Task{ID: "acl-create", Status: task.StatusSuccess, Result: json.RawMessage(`{"dry_run":false,"operation":{"data":{"schema_version":"experimental-v1","acl":{"acl_id":"acl-000001","schema_version":"experimental-v1","name":"FAKE_ACL_WEB","address_family":"IPV4","rules":[{"sequence":10,"action":"PERMIT","protocol":"ANY","source":"any","destination":"any"}]} }},"audit_completed":true}`)}}, Completed: true}}
-	router := routeACLRouterWithHealth(t, principal(auth.RoleAdmin, auth.PermissionOperationConfig), submitter)
+	router := routeACLRouter(t, principal(auth.RoleAdmin, auth.PermissionOperationConfig), submitter)
 	body := `{"schema_version":"experimental-v1","name":"FAKE_ACL_WEB","address_family":"IPV4","rules":[{"sequence":10,"action":"PERMIT","protocol":"ANY","source":"any","destination":"any"}]}`
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, authorizedRequest(http.MethodPost, "/api/v1/switches/device/acls", body))
@@ -62,7 +62,7 @@ func TestACLIsExplicitlyExperimentalAndTyped(t *testing.T) {
 
 func TestACLUnknownFieldsFailBeforeSubmission(t *testing.T) {
 	submitter := &operationSubmitterStub{}
-	router := routeACLRouterWithHealth(t, principal(auth.RoleAdmin, auth.PermissionOperationConfig), submitter)
+	router := routeACLRouter(t, principal(auth.RoleAdmin, auth.PermissionOperationConfig), submitter)
 	body := `{"schema_version":"experimental-v1","name":"FAKE_ACL_WEB","address_family":"IPV4","rules":[{"sequence":10,"action":"PERMIT","protocol":"ANY","source":"any","destination":"any","vendor_cli":"permit ip any any"}]}`
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, authorizedRequest(http.MethodPost, "/api/v1/switches/device/acls", body))
@@ -73,7 +73,7 @@ func TestACLUnknownFieldsFailBeforeSubmission(t *testing.T) {
 
 func TestUnsupportedRouteReturns422(t *testing.T) {
 	submitter := &operationSubmitterStub{err: apperror.New(apperror.CodeCapabilityNotSupported, "")}
-	router := routeACLRouterWithHealth(t, principal(auth.RoleViewer, auth.PermissionOperationQuery), submitter)
+	router := routeACLRouter(t, principal(auth.RoleViewer, auth.PermissionOperationQuery), submitter)
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, authorizedRequest(http.MethodGet, "/api/v1/switches/device/routes", ""))
 	if recorder.Code != http.StatusUnprocessableEntity || !strings.Contains(recorder.Body.String(), `"code":"CAPABILITY_NOT_SUPPORTED"`) {
@@ -83,7 +83,7 @@ func TestUnsupportedRouteReturns422(t *testing.T) {
 
 func TestRouteNormalizesBeforeSubmission(t *testing.T) {
 	submitter := &operationSubmitterStub{submission: operationsvc.Submission{Task: task.Persisted{Task: task.Task{ID: "route-create", Status: task.StatusQueued}}}}
-	router := routeACLRouterWithHealth(t, principal(auth.RoleAdmin, auth.PermissionOperationConfig), submitter)
+	router := routeACLRouter(t, principal(auth.RoleAdmin, auth.PermissionOperationConfig), submitter)
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, authorizedRequest(http.MethodPost, "/api/v1/switches/device/routes", `{"address_family":"IPV4","destination":"192.0.2.7/24","next_hop":"198.51.100.1","execution_mode":"ASYNC"}`))
 	if recorder.Code != http.StatusAccepted {
