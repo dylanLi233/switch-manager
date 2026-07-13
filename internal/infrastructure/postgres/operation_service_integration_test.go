@@ -70,7 +70,7 @@ func TestOperationServicePostgreSQLIntegration(t *testing.T){
 	var dryResult map[string]any;if err:=json.Unmarshal(dryRunSubmission.Task.Result,&dryResult);err!=nil||dryResult["dry_run"]!=true{t.Fatalf("dry result=%s err=%v",dryRunSubmission.Task.Result,err)}
 	factory.add(fakecli.Step{Expect:pluginapi.PlannedCommand{Sequence:1,Text:`fake.echo.query "hello"`,Timeout:2*time.Second},Output:"hello"})
 	querySubmission,err:=service.Submit(ctx,operationsvc.SubmitRequest{RequestID:"req-operation-query",Operation:operation.Request{Name:operation.Name(fakeplugin.OperationEchoQuery),Class:operation.ClassQuery,DeviceID:operationDeviceID,Parameters:map[string]any{"message":"hello"},ExecutionMode:operation.ExecutionModeAsync,Actor:actor}});if err!=nil{t.Fatal(err)}
-	queryTask:=waitOperationTaskStatus(t,repos.Tasks,querySubmission.Task.ID,task.StatusSuccess);if queryTask.PluginName!="fake-huawei"||queryTask.PluginVersion!="1.3.0"{t.Fatalf("query task=%+v",queryTask)}
+	queryTask:=waitOperationTaskStatus(t,repos.Tasks,querySubmission.Task.ID,task.StatusSuccess);if queryTask.PluginName!="fake-huawei"||queryTask.PluginVersion!="1.4.0"{t.Fatalf("query task=%+v",queryTask)}
 }
 
 func waitOperationTaskStatus(t *testing.T,repository *TaskRepository,id string,want task.Status)task.Persisted{t.Helper();deadline:=time.Now().Add(3*time.Second);for{value,err:=repository.Get(context.Background(),id);if err!=nil{t.Fatal(err)};if value.Status==want{return value};if time.Now().After(deadline){t.Fatalf("task %s status=%s want=%s",id,value.Status,want)};time.Sleep(5*time.Millisecond)}}
