@@ -68,7 +68,7 @@ func (p *Plugin) buildCustomCommandPlan(request pluginapi.PlanRequest) (pluginap
 	}
 	planned := make([]pluginapi.PlannedCommand, len(commands))
 	for index, command := range commands {
-		planned[index] = pluginapi.PlannedCommand{Sequence: index + 1, Text: command, Timeout: 2 * time.Second}
+		planned[index] = pluginapi.PlannedCommand{Sequence: index + 1, Text: command, Timeout: 2 * time.Second, Sensitive: true}
 	}
 	metadata := p.Metadata()
 	plan := pluginapi.ExecutionPlan{
