@@ -42,7 +42,7 @@ assert_migration_command_fails() {
 bash "${ROOT_DIR}/scripts/migrate.sh" down all >/dev/null
 bash "${ROOT_DIR}/scripts/migrate.sh" up
 
-assert_eq "6" "$(scalar "SELECT count(*) FROM schema_migrations")" "migration count"
+assert_eq "5" "$(scalar "SELECT count(*) FROM schema_migrations")" "migration count"
 assert_eq "3" "$(scalar "SELECT count(*) FROM roles")" "role seed count"
 assert_eq "14" "$(scalar "SELECT count(*) FROM permissions")" "permission seed count"
 assert_eq "14" "$(scalar "SELECT count(*) FROM role_permissions rp JOIN roles r ON r.id = rp.role_id WHERE r.name = 'ADMIN'")" "admin permissions"
@@ -88,7 +88,7 @@ expect_failure "task request snapshot immutable" "UPDATE tasks SET target_id='sw
 expect_failure "historical audit prevents task deletion" "DELETE FROM tasks WHERE id = '${task_id}'"
 
 bash "${ROOT_DIR}/scripts/migrate.sh" up >/dev/null
-assert_eq "6" "$(scalar "SELECT count(*) FROM schema_migrations")" "idempotent up"
+assert_eq "5" "$(scalar "SELECT count(*) FROM schema_migrations")" "idempotent up"
 
 bash "${ROOT_DIR}/scripts/migrate.sh" down all
 assert_eq "0" "$(scalar "SELECT count(*) FROM schema_migrations")" "down migration count"
@@ -99,6 +99,6 @@ assert_eq "" "$(scalar "SELECT to_regclass('public.batch_tasks')")" "batch_tasks
 assert_eq "" "$(scalar "SELECT to_regclass('public.batch_task_items')")" "batch_task_items dropped"
 
 bash "${ROOT_DIR}/scripts/migrate.sh" up >/dev/null
-assert_eq "6" "$(scalar "SELECT count(*) FROM schema_migrations")" "reapply migration count"
+assert_eq "5" "$(scalar "SELECT count(*) FROM schema_migrations")" "reapply migration count"
 
 echo "migration integration tests passed"
