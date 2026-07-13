@@ -1,8 +1,10 @@
 openapi: 3.1.0
 info:
   title: Switch Manager API
-  version: 0.2.0
-  description: Vendor-neutral switch management API. Interface names are validated by the selected vendor plugin.
+  version: 0.3.0
+  description: >-
+    Vendor-neutral switch management API. Interface and ACL names are validated
+    by the selected vendor plugin. The ACL contract is explicitly experimental-v1.
 servers:
   - url: /api/v1
 security:
@@ -45,6 +47,7 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/OperationSuccess' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
     patch:
       operationId: updateVlan
       x-required-permission: operation.config
@@ -61,6 +64,7 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
     delete:
       operationId: deleteVlan
       x-required-permission: operation.config
@@ -77,6 +81,8 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
   /switches/{switchId}/interfaces:
     get:
       operationId: listInterfaces
@@ -140,7 +146,7 @@ paths:
   /switches/{switchId}/interfaces/{interfaceName}/trunk:
     put:
       operationId: setInterfaceTrunkMode
-      description: native_vlan must be present in allowed_vlans; an unsupported native VLAN semantic returns 422 rather than being ignored.
+      description: native_vlan must be present in allowed_vlans; unsupported vendor semantics return 422 rather than being ignored.
       x-required-permission: operation.config
       parameters:
         - $ref: '#/components/parameters/SwitchID'
@@ -175,6 +181,121 @@ paths:
         required: false
         content: { application/json: { schema: { $ref: '#/components/schemas/OperationOptions' } } }
       responses: { '200': { $ref: '#/components/responses/OperationSuccess' }, '202': { $ref: '#/components/responses/OperationAccepted' }, '400': { $ref: '#/components/responses/BadRequest' }, '403': { $ref: '#/components/responses/Forbidden' }, '404': { $ref: '#/components/responses/NotFound' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/Unprocessable' } }
+
+  /switches/{switchId}/routes:
+    get:
+      operationId: listStaticRoutes
+      summary: List normalized static routes
+      x-required-permission: operation.query
+      parameters: [{ $ref: '#/components/parameters/SwitchID' }]
+      responses:
+        '200': { $ref: '#/components/responses/OperationSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    post:
+      operationId: createStaticRoute
+      x-required-permission: operation.config
+      parameters:
+        - $ref: '#/components/parameters/SwitchID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/StaticRouteRequest' } } }
+      responses: { '200': { $ref: '#/components/responses/OperationSuccess' }, '202': { $ref: '#/components/responses/OperationAccepted' }, '400': { $ref: '#/components/responses/BadRequest' }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/Unprocessable' } }
+  /switches/{switchId}/routes/{routeId}:
+    get:
+      operationId: getStaticRoute
+      x-required-permission: operation.query
+      parameters:
+        - $ref: '#/components/parameters/SwitchID'
+        - $ref: '#/components/parameters/RouteID'
+      responses: { '200': { $ref: '#/components/responses/OperationSuccess' }, '400': { $ref: '#/components/responses/BadRequest' }, '404': { $ref: '#/components/responses/NotFound' }, '422': { $ref: '#/components/responses/Unprocessable' } }
+    patch:
+      operationId: updateStaticRoute
+      x-required-permission: operation.config
+      parameters:
+        - $ref: '#/components/parameters/SwitchID'
+        - $ref: '#/components/parameters/RouteID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/StaticRouteRequest' } } }
+      responses: { '200': { $ref: '#/components/responses/OperationSuccess' }, '202': { $ref: '#/components/responses/OperationAccepted' }, '400': { $ref: '#/components/responses/BadRequest' }, '404': { $ref: '#/components/responses/NotFound' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/Unprocessable' } }
+    delete:
+      operationId: deleteStaticRoute
+      description: routeId is a system-generated identifier; complete CLI text is never placed in the URL.
+      x-required-permission: operation.config
+      parameters:
+        - $ref: '#/components/parameters/SwitchID'
+        - $ref: '#/components/parameters/RouteID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: '#/components/schemas/OperationOptions' } } }
+      responses: { '200': { $ref: '#/components/responses/OperationSuccess' }, '202': { $ref: '#/components/responses/OperationAccepted' }, '400': { $ref: '#/components/responses/BadRequest' }, '404': { $ref: '#/components/responses/NotFound' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/Unprocessable' } }
+
+  /switches/{switchId}/acls:
+    get:
+      operationId: listExperimentalAcls
+      x-experimental: true
+      x-experimental-schema-version: experimental-v1
+      x-required-permission: operation.query
+      parameters: [{ $ref: '#/components/parameters/SwitchID' }]
+      responses:
+        '200': { $ref: '#/components/responses/ExperimentalOperationSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    post:
+      operationId: createExperimentalAcl
+      x-experimental: true
+      x-experimental-schema-version: experimental-v1
+      x-required-permission: operation.config
+      parameters:
+        - $ref: '#/components/parameters/SwitchID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ExperimentalACLRequest' } } }
+      responses: { '200': { $ref: '#/components/responses/ExperimentalOperationSuccess' }, '202': { $ref: '#/components/responses/ExperimentalOperationAccepted' }, '400': { $ref: '#/components/responses/BadRequest' }, '403': { $ref: '#/components/responses/Forbidden' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/Unprocessable' } }
+  /switches/{switchId}/acls/{aclId}:
+    get:
+      operationId: getExperimentalAcl
+      x-experimental: true
+      x-experimental-schema-version: experimental-v1
+      x-required-permission: operation.query
+      parameters:
+        - $ref: '#/components/parameters/SwitchID'
+        - $ref: '#/components/parameters/ACLID'
+      responses: { '200': { $ref: '#/components/responses/ExperimentalOperationSuccess' }, '400': { $ref: '#/components/responses/BadRequest' }, '404': { $ref: '#/components/responses/NotFound' }, '422': { $ref: '#/components/responses/Unprocessable' } }
+    patch:
+      operationId: updateExperimentalAcl
+      x-experimental: true
+      x-experimental-schema-version: experimental-v1
+      x-required-permission: operation.config
+      parameters:
+        - $ref: '#/components/parameters/SwitchID'
+        - $ref: '#/components/parameters/ACLID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ExperimentalACLRequest' } } }
+      responses: { '200': { $ref: '#/components/responses/ExperimentalOperationSuccess' }, '202': { $ref: '#/components/responses/ExperimentalOperationAccepted' }, '400': { $ref: '#/components/responses/BadRequest' }, '404': { $ref: '#/components/responses/NotFound' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/Unprocessable' } }
+    delete:
+      operationId: deleteExperimentalAcl
+      x-experimental: true
+      x-experimental-schema-version: experimental-v1
+      x-required-permission: operation.config
+      parameters:
+        - $ref: '#/components/parameters/SwitchID'
+        - $ref: '#/components/parameters/ACLID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: '#/components/schemas/OperationOptions' } } }
+      responses: { '200': { $ref: '#/components/responses/ExperimentalOperationSuccess' }, '202': { $ref: '#/components/responses/ExperimentalOperationAccepted' }, '400': { $ref: '#/components/responses/BadRequest' }, '404': { $ref: '#/components/responses/NotFound' }, '409': { $ref: '#/components/responses/Conflict' }, '422': { $ref: '#/components/responses/Unprocessable' } }
+
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -187,7 +308,22 @@ components:
       required: true
       description: Plugin-specific interface name. Slash characters must be percent-encoded inside this single path segment.
       schema: { type: string, minLength: 1, maxLength: 128 }
+    RouteID:
+      name: routeId
+      in: path
+      required: true
+      description: System-generated route identifier, never a raw CLI command.
+      schema: { type: string, minLength: 1, maxLength: 64 }
+    ACLID:
+      name: aclId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 64 }
     IdempotencyKey: { name: Idempotency-Key, in: header, required: false, schema: { type: string, minLength: 1, maxLength: 128 } }
+  headers:
+    ExperimentalACL:
+      description: Experimental ACL schema version.
+      schema: { type: string, const: experimental-v1 }
   schemas:
     OperationOptions:
       type: object
@@ -261,6 +397,76 @@ components:
         dry_run: { type: boolean, default: false }
         save_config: { type: boolean, default: false }
         confirm_risk: { type: boolean, default: false }
+    StaticRoute:
+      type: object
+      additionalProperties: false
+      required: [route_id, address_family, destination, next_hop]
+      properties:
+        route_id: { type: string, minLength: 1, maxLength: 64 }
+        address_family: { type: string, enum: [IPV4, IPV6] }
+        destination: { type: string, description: Canonical CIDR prefix }
+        next_hop: { type: string, description: IP address matching address_family }
+        outgoing_interface: { type: string, maxLength: 128 }
+        description: { type: string, maxLength: 128 }
+    StaticRouteRequest:
+      type: object
+      additionalProperties: false
+      required: [address_family, destination, next_hop]
+      properties:
+        address_family: { type: string, enum: [IPV4, IPV6] }
+        destination: { type: string }
+        next_hop: { type: string }
+        outgoing_interface: { type: string, maxLength: 128 }
+        description: { type: string, maxLength: 128 }
+        execution_mode: { type: string, enum: [SYNC, ASYNC], default: SYNC }
+        dry_run: { type: boolean, default: false }
+        save_config: { type: boolean, default: false }
+        confirm_risk: { type: boolean, default: false }
+    ACLPortRange:
+      type: object
+      additionalProperties: false
+      required: [from, to]
+      properties:
+        from: { type: integer, minimum: 1, maximum: 65535 }
+        to: { type: integer, minimum: 1, maximum: 65535 }
+    ExperimentalACLRule:
+      type: object
+      additionalProperties: false
+      required: [sequence, action, protocol, source, destination]
+      properties:
+        sequence: { type: integer, minimum: 1, maximum: 65535 }
+        action: { type: string, enum: [PERMIT, DENY] }
+        protocol: { type: string, enum: [ANY, TCP, UDP, ICMP] }
+        source: { type: string, description: The literal 'any' or a CIDR prefix }
+        destination: { type: string, description: The literal 'any' or a CIDR prefix }
+        source_ports: { type: array, items: { $ref: '#/components/schemas/ACLPortRange' } }
+        destination_ports: { type: array, items: { $ref: '#/components/schemas/ACLPortRange' } }
+        description: { type: string, maxLength: 128 }
+    ExperimentalACL:
+      type: object
+      additionalProperties: false
+      required: [acl_id, schema_version, name, address_family, rules]
+      properties:
+        acl_id: { type: string, minLength: 1, maxLength: 64 }
+        schema_version: { type: string, const: experimental-v1 }
+        name: { type: string, minLength: 1, maxLength: 64, description: Final syntax is validated by the vendor plugin }
+        description: { type: string, maxLength: 128 }
+        address_family: { type: string, enum: [ANY, IPV4, IPV6] }
+        rules: { type: array, minItems: 1, maxItems: 256, items: { $ref: '#/components/schemas/ExperimentalACLRule' } }
+    ExperimentalACLRequest:
+      type: object
+      additionalProperties: false
+      required: [schema_version, name, address_family, rules]
+      properties:
+        schema_version: { type: string, const: experimental-v1 }
+        name: { type: string, minLength: 1, maxLength: 64, description: Final syntax is validated by the vendor plugin }
+        description: { type: string, maxLength: 128 }
+        address_family: { type: string, enum: [ANY, IPV4, IPV6] }
+        rules: { type: array, minItems: 1, maxItems: 256, items: { $ref: '#/components/schemas/ExperimentalACLRule' } }
+        execution_mode: { type: string, enum: [SYNC, ASYNC], default: SYNC }
+        dry_run: { type: boolean, default: false }
+        save_config: { type: boolean, default: false }
+        confirm_risk: { type: boolean, default: false }
     SuccessEnvelope:
       type: object
       required: [request_id, success, data]
@@ -278,6 +484,14 @@ components:
   responses:
     OperationSuccess: { description: Synchronous operation completed or dry-run plan generated, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
     OperationAccepted: { description: Asynchronous or deferred task accepted, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } } }
+    ExperimentalOperationSuccess:
+      description: Experimental ACL operation completed
+      headers: { X-Experimental-API: { $ref: '#/components/headers/ExperimentalACL' } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } }
+    ExperimentalOperationAccepted:
+      description: Experimental ACL task accepted
+      headers: { X-Experimental-API: { $ref: '#/components/headers/ExperimentalACL' } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/SuccessEnvelope' } } }
     BadRequest: { description: Validation error, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
     Unauthorized: { description: Authentication required, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
     Forbidden: { description: Permission denied, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }

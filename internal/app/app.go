@@ -207,7 +207,12 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 			app.Close()
 			return nil, fmt.Errorf("initialize interface handlers: %w", err)
 		}
-		registrars = append(registrars, vlanHandlers, interfaceHandlers)
+		routeACLHandlers, err := httpserver.NewRouteACLHandlers(operationService)
+		if err != nil {
+			app.Close()
+			return nil, fmt.Errorf("initialize route and ACL handlers: %w", err)
+		}
+		registrars = append(registrars, vlanHandlers, interfaceHandlers, routeACLHandlers)
 		app.dispatcher = dispatcher
 	}
 

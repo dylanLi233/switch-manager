@@ -14,7 +14,9 @@ import (
 	"time"
 
 	"github.com/dylanLi233/switch-manager/internal/apperror"
+	"github.com/dylanLi233/switch-manager/internal/domain/acl"
 	"github.com/dylanLi233/switch-manager/internal/domain/device"
+	"github.com/dylanLi233/switch-manager/internal/domain/route"
 	"github.com/dylanLi233/switch-manager/internal/domain/switchinterface"
 	"github.com/dylanLi233/switch-manager/internal/domain/vlan"
 	"github.com/dylanLi233/switch-manager/internal/inventorysvc"
@@ -23,13 +25,21 @@ import (
 )
 
 type Factory struct {
-	mu         sync.RWMutex
-	devices    map[string]map[int]vlan.VLAN
-	interfaces map[string]map[string]switchinterface.Interface
+	mu            sync.RWMutex
+	devices       map[string]map[int]vlan.VLAN
+	interfaces    map[string]map[string]switchinterface.Interface
+	routes        map[string]map[string]route.StaticRoute
+	routeCounters map[string]uint64
+	acls          map[string]map[string]acl.ACL
+	aclCounters   map[string]uint64
 }
 
 func New() *Factory {
-	return &Factory{devices: make(map[string]map[int]vlan.VLAN), interfaces: make(map[string]map[string]switchinterface.Interface)}
+	return &Factory{
+		devices: make(map[string]map[int]vlan.VLAN), interfaces: make(map[string]map[string]switchinterface.Interface),
+		routes: make(map[string]map[string]route.StaticRoute), routeCounters: make(map[string]uint64),
+		acls: make(map[string]map[string]acl.ACL), aclCounters: make(map[string]uint64),
+	}
 }
 
 func (f *Factory) Open(ctx context.Context, managed device.Device) (operationsvc.Session, error) {
@@ -51,6 +61,12 @@ func (f *Factory) Open(ctx context.Context, managed device.Device) (operationsvc
 	}
 	if _, exists := f.interfaces[managed.ID]; !exists {
 		f.interfaces[managed.ID] = defaultInterfaces()
+	}
+	if _, exists := f.routes[managed.ID]; !exists {
+		f.routes[managed.ID] = make(map[string]route.StaticRoute)
+	}
+	if _, exists := f.acls[managed.ID]; !exists {
+		f.acls[managed.ID] = make(map[string]acl.ACL)
 	}
 	f.mu.Unlock()
 	return &session{factory: f, deviceID: managed.ID, vendor: managed.Vendor}, nil
@@ -82,6 +98,8 @@ func (f *Factory) Detect(ctx context.Context, managed device.Device, _ inventory
 			"vlan.list", "vlan.get", "vlan.create", "vlan.update", "vlan.delete",
 			"interface.list", "interface.get", "interface.enable", "interface.disable",
 			"interface.access", "interface.trunk", "interface.vlan.add", "interface.vlan.remove",
+			"route.list", "route.get", "route.create", "route.update", "route.delete",
+			"acl.list", "acl.get", "acl.create", "acl.update", "acl.delete",
 			"config.save",
 		},
 	}, nil
@@ -233,6 +251,8 @@ func (s *session) execute(text string) (string, error) {
 		return marshal(map[string]any{"deleted": true, "vlan_id": payload.VLANID})
 	case text == "fake.interface.list" || strings.HasPrefix(text, "fake.interface."):
 		return s.executeInterface(text)
+	case text == "fake.route.list" || strings.HasPrefix(text, "fake.route.") || text == "fake.acl.list" || strings.HasPrefix(text, "fake.acl."):
+		return s.executeRouteACL(text)
 	case strings.HasPrefix(text, "fake.echo.query ") || strings.HasPrefix(text, "fake.echo.config "):
 		_, quoted, ok := strings.Cut(text, " ")
 		if !ok {
