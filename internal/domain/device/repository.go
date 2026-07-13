@@ -4,10 +4,11 @@ import "context"
 
 // ListFilter limits device repository queries.
 type ListFilter struct {
-	Vendor *Vendor
-	Status *Status
-	Limit  int
-	Offset int
+	Vendor  *Vendor
+	Status  *Status
+	Keyword string
+	Limit   int
+	Offset  int
 }
 
 // Repository persists active managed switches. Deleted devices are excluded.
