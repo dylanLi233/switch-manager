@@ -8,12 +8,18 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
+	"regexp"
 
 	"github.com/dylanLi233/switch-manager/internal/authn"
 	"github.com/dylanLi233/switch-manager/internal/config"
 	"github.com/dylanLi233/switch-manager/internal/health"
 	"github.com/dylanLi233/switch-manager/internal/infrastructure/postgres"
+	"github.com/dylanLi233/switch-manager/internal/inventorysvc"
+	"github.com/dylanLi233/switch-manager/internal/secretbox"
+	"github.com/dylanLi233/switch-manager/internal/sshprobe"
 	"github.com/dylanLi233/switch-manager/internal/transport/httpserver"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 // App owns process-level dependencies and server lifecycle.
@@ -35,10 +41,17 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	if logger == nil {
 		return nil, errors.New("logger is required")
 	}
+	inventoryConfig, err := config.LoadInventoryEnvironment(os.LookupEnv)
+	if err != nil {
+		return nil, fmt.Errorf("load inventory security configuration: %w", err)
+	}
+	if inventoryConfig.Enabled && !cfg.Authentication.Enabled {
+		return nil, errors.New("inventory API requires authentication to be enabled")
+	}
 
 	app := &App{cfg: cfg, logger: logger}
 	checks := []health.Check{}
-	needsDatabase := cfg.Database.Required || cfg.Authentication.Enabled
+	needsDatabase := cfg.Database.Required || cfg.Authentication.Enabled || inventoryConfig.Enabled
 	if needsDatabase {
 		store, err := postgres.Open(ctx, cfg.Database.DSN)
 		if err != nil {
@@ -49,6 +62,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	}
 
 	var authentication *authn.Service
+	var registrars []httpserver.ProtectedRouteRegistrar
 	if cfg.Authentication.Enabled {
 		accessRepository := app.store.Repositories().Access
 		if err := accessRepository.CheckReady(ctx); err != nil {
@@ -74,10 +88,52 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 		}
 	}
 
+	if inventoryConfig.Enabled {
+		box, err := secretbox.NewBase64(inventoryConfig.MasterKeyBase64, inventoryConfig.KeyVersion)
+		if err != nil {
+			app.Close()
+			return nil, fmt.Errorf("initialize credential encryption: %w", err)
+		}
+		var tester inventorysvc.ConnectionTester
+		if inventoryConfig.KnownHostsFile != "" {
+			callback, err := knownhosts.New(inventoryConfig.KnownHostsFile)
+			if err != nil {
+				app.Close()
+				return nil, fmt.Errorf("load SSH known_hosts: %w", err)
+			}
+			var prompt sshprobe.PromptProber
+			if inventoryConfig.PromptPattern != "" {
+				pattern, err := regexp.Compile(inventoryConfig.PromptPattern)
+				if err != nil {
+					app.Close()
+					return nil, fmt.Errorf("compile SSH prompt pattern: %w", err)
+				}
+				prompt = sshprobe.RegexPromptProber{Pattern: pattern, Family: inventoryConfig.PromptFamily, Timeout: inventoryConfig.SSHTimeout}
+			}
+			tester, err = sshprobe.New(callback, inventoryConfig.SSHTimeout, prompt)
+			if err != nil {
+				app.Close()
+				return nil, fmt.Errorf("initialize SSH connection tester: %w", err)
+			}
+		}
+		repositories := app.store.Repositories()
+		inventoryService, err := inventorysvc.New(repositories.Devices, repositories.Credentials, repositories.ExecutionCredentials, box, tester, nil)
+		if err != nil {
+			app.Close()
+			return nil, fmt.Errorf("initialize inventory service: %w", err)
+		}
+		handlers, err := httpserver.NewInventoryHandlers(inventoryService)
+		if err != nil {
+			app.Close()
+			return nil, fmt.Errorf("initialize inventory handlers: %w", err)
+		}
+		registrars = append(registrars, handlers)
+	}
+
 	healthHandler := health.NewHandler(cfg.Server.ReadTimeout, checks...)
 	var router http.Handler
 	if authentication != nil {
-		router = httpserver.NewAuthenticatedRouter(healthHandler, cfg.Server.MaxRequestBytes, authentication)
+		router = httpserver.NewAuthenticatedRouter(healthHandler, cfg.Server.MaxRequestBytes, authentication, registrars...)
 	} else {
 		router = httpserver.NewRouter(healthHandler, cfg.Server.MaxRequestBytes)
 	}
