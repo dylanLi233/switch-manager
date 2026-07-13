@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // CustomCommandEffect is the result of one explicit command rule. BLOCKED is
@@ -63,8 +64,16 @@ func (r CustomCommandRule) Validate() error {
 	if err := r.Match.Validate(); err != nil {
 		return err
 	}
-	if r.Pattern == "" || r.Pattern != strings.TrimSpace(r.Pattern) || len(r.Pattern) > 512 || strings.ContainsAny(r.Pattern, "\r\n\x00") {
+	if r.Pattern == "" || len(r.Pattern) > 512 || strings.ContainsAny(r.Pattern, "\r\n\x00") || strings.TrimLeftFunc(r.Pattern, unicode.IsSpace) != r.Pattern {
 		return errors.New("custom command rule pattern is invalid")
+	}
+	for _, character := range r.Pattern {
+		if unicode.IsControl(character) {
+			return errors.New("custom command rule pattern contains a control character")
+		}
+	}
+	if r.Match == CommandMatchExact && r.Pattern != strings.TrimSpace(r.Pattern) {
+		return errors.New("exact custom command rule cannot contain trailing whitespace")
 	}
 	return r.Effect.Validate()
 }
