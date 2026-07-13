@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"sort"
 	"strconv"
 	"strings"
@@ -222,7 +223,8 @@ func decodePayload(encoded string) (vlanPayload, error) {
 	if err := decoder.Decode(&payload); err != nil {
 		return payload, apperror.Wrap(apperror.CodeCommandRejected, "", err)
 	}
-	if decoder.More() {
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		return payload, apperror.New(apperror.CodeCommandRejected, "")
 	}
 	if err := vlan.ValidateID(payload.VLANID); err != nil {
