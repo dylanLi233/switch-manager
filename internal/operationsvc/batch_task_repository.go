@@ -8,6 +8,10 @@ import (
 	"github.com/dylanLi233/switch-manager/internal/domain/task"
 )
 
+type directTerminalAuditSyncer interface {
+	SyncDirectTerminalAudits(context.Context, string, time.Time) error
+}
+
 // BatchAwareTaskRepository forwards all task operations and reconciles a batch
 // whenever a child reaches a terminal state, is cancelled, or recovery
 // interrupts running children.
@@ -27,13 +31,26 @@ func NewBatchAwareTaskRepository(base task.Repository, batches BatchPersistence)
 	return &BatchAwareTaskRepository{Repository: base, batches: batches, now: time.Now}, nil
 }
 
+func (r *BatchAwareTaskRepository) reconcile(ctx context.Context, batchID string) error {
+	at := r.now().UTC()
+	if _, err := r.batches.RefreshBatch(ctx, batchID, at); err != nil {
+		return err
+	}
+	if synchronizer, ok := r.batches.(directTerminalAuditSyncer); ok {
+		if err := synchronizer.SyncDirectTerminalAudits(ctx, batchID, at); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *BatchAwareTaskRepository) Save(ctx context.Context, value task.Persisted, expectedVersion int64) (task.Persisted, error) {
 	saved, err := r.Repository.Save(ctx, value, expectedVersion)
 	if err != nil {
 		return task.Persisted{}, err
 	}
 	if saved.Type == task.TypeBatchChild && saved.Status.Terminal() {
-		if _, err := r.batches.RefreshBatch(ctx, saved.ParentTaskID, r.now().UTC()); err != nil {
+		if err := r.reconcile(ctx, saved.ParentTaskID); err != nil {
 			return saved, err
 		}
 	}
@@ -46,7 +63,7 @@ func (r *BatchAwareTaskRepository) RequestCancel(ctx context.Context, id string,
 		return task.Persisted{}, err
 	}
 	if value.Type == task.TypeBatchChild && value.Status.Terminal() {
-		if _, err := r.batches.RefreshBatch(ctx, value.ParentTaskID, r.now().UTC()); err != nil {
+		if err := r.reconcile(ctx, value.ParentTaskID); err != nil {
 			return value, err
 		}
 	}
@@ -63,7 +80,7 @@ func (r *BatchAwareTaskRepository) InterruptRunning(ctx context.Context, at time
 		return count, err
 	}
 	for _, id := range ids {
-		if _, err := r.batches.RefreshBatch(ctx, id, r.now().UTC()); err != nil {
+		if err := r.reconcile(ctx, id); err != nil {
 			return count, err
 		}
 	}
