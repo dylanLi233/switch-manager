@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dylanLi233/switch-manager/pkg/pluginapi"
 )
@@ -65,7 +66,16 @@ func TestFakeInterfaceParserRejectsInvalidOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	transcript := pluginapi.Transcript{Commands: []pluginapi.CommandRecord{{Sequence: 1, Command: plan.Commands[0].Text, Output: `{"interface":{"name":"FakeEthernet1/0/1"}}`, Succeeded: true}}}
+	started := time.Now().UTC()
+	transcript := pluginapi.Transcript{
+		StartedAt:  started,
+		FinishedAt: started.Add(time.Millisecond),
+		Commands: []pluginapi.CommandRecord{{
+			Sequence: 1, Command: plan.Commands[0].Text,
+			Output: `{"interface":{"name":"FakeEthernet1/0/1"}}`,
+			Succeeded: true, Duration: time.Millisecond,
+		}},
+	}
 	if _, err := plugin.ParseResult(context.Background(), plan, transcript); err == nil || !strings.Contains(err.Error(), "invalid schema") {
 		t.Fatalf("error=%v", err)
 	}
