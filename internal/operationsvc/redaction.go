@@ -113,7 +113,7 @@ func redactValue(value any) any {
 
 func sensitiveKey(key string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(key))
-	for _, token := range []string{"password", "secret", "private_key", "token", "community", "passphrase", "credential"} {
+	for _, token := range []string{"password", "secret", "private_key", "token", "community", "passphrase", "credential", "command"} {
 		if strings.Contains(normalized, token) {
 			return true
 		}
