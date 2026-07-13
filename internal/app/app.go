@@ -174,6 +174,16 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 			app.Close()
 			return nil, fmt.Errorf("initialize operation planner: %w", err)
 		}
+		batchStore, err := postgres.NewBatchStore(app.store)
+		if err != nil {
+			app.Close()
+			return nil, fmt.Errorf("initialize batch persistence: %w", err)
+		}
+		batchAwareTasks, err := operationsvc.NewBatchAwareTaskRepository(repositories.Tasks, batchStore)
+		if err != nil {
+			app.Close()
+			return nil, fmt.Errorf("initialize batch-aware task repository: %w", err)
+		}
 		guards, err := concurrency.NewController(concurrency.DefaultGlobalLimit)
 		if err != nil {
 			app.Close()
@@ -184,7 +194,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 			app.Close()
 			return nil, fmt.Errorf("initialize operation executor: %w", err)
 		}
-		dispatcher, err := scheduler.New(repositories.Tasks, executor, scheduler.Config{Workers: fakeConfig.Workers})
+		dispatcher, err := scheduler.New(batchAwareTasks, executor, scheduler.Config{Workers: fakeConfig.Workers})
 		if err != nil {
 			app.Close()
 			return nil, fmt.Errorf("initialize task scheduler: %w", err)
@@ -194,10 +204,15 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 			app.Close()
 			return nil, fmt.Errorf("initialize operation submission: %w", err)
 		}
-		operationService, err := operationsvc.NewService(repositories.Tasks, repositories.Audits, planner, dispatcher, committer, operationsvc.Config{SyncWaitTimeout: fakeConfig.SyncWaitTimeout})
+		operationService, err := operationsvc.NewService(batchAwareTasks, repositories.Audits, planner, dispatcher, committer, operationsvc.Config{SyncWaitTimeout: fakeConfig.SyncWaitTimeout})
 		if err != nil {
 			app.Close()
 			return nil, fmt.Errorf("initialize operation service: %w", err)
+		}
+		batchService, err := operationsvc.NewBatchService(batchStore, planner, dispatcher, operationsvc.Config{SyncWaitTimeout: fakeConfig.SyncWaitTimeout})
+		if err != nil {
+			app.Close()
+			return nil, fmt.Errorf("initialize batch service: %w", err)
 		}
 		vlanHandlers, err := httpserver.NewVLANHandlers(operationService)
 		if err != nil {
@@ -219,7 +234,12 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 			app.Close()
 			return nil, fmt.Errorf("initialize telemetry handlers: %w", err)
 		}
-		registrars = append(registrars, vlanHandlers, interfaceHandlers, routeACLHandlers, telemetryHandlers)
+		batchHandlers, err := httpserver.NewBatchHandlers(batchService)
+		if err != nil {
+			app.Close()
+			return nil, fmt.Errorf("initialize batch handlers: %w", err)
+		}
+		registrars = append(registrars, vlanHandlers, interfaceHandlers, routeACLHandlers, telemetryHandlers, batchHandlers)
 		app.dispatcher = dispatcher
 	}
 
