@@ -156,8 +156,12 @@ func (p *Planner) prepare(ctx context.Context, input planInput) (preparedOperati
 	if err != nil {
 		return preparedOperation{}, apperror.Wrap(apperror.CodeInternalError, "", err)
 	}
+	executionPlugin := plugin
+	if commandDecision != nil {
+		executionPlugin = commandsecurity.WrapPlugin(plugin, *commandDecision)
+	}
 	return preparedOperation{
-		Device: managed, DeviceInfo: info, Plugin: plugin, Metadata: metadata,
+		Device: managed, DeviceInfo: info, Plugin: executionPlugin, Metadata: metadata,
 		MainPlan: main, SavePlan: save, MainHash: mainHash, SaveHash: saveHash,
 		AuditPlan: auditPlan, CommandDecision: commandDecision,
 	}, nil
