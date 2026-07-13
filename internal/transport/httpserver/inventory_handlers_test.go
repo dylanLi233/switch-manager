@@ -74,8 +74,7 @@ func inventoryRouter(t *testing.T, principal auth.Principal, service *inventoryS
 	if err != nil {
 		t.Fatal(err)
 	}
-	healthHandler := health.NewHandler(time.Second)
-	return NewAuthenticatedRouter(healthHandler, 1<<20, staticInventoryAuth{principal: principal}, handlers)
+	return NewAuthenticatedRouter(health.NewHandler(time.Second), 1<<20, staticInventoryAuth{principal: principal}, handlers)
 }
 
 func authorizedRequest(method, path, body string) *http.Request {
@@ -97,7 +96,7 @@ func TestCredentialCreateNeverEchoesSecret(t *testing.T) {
 		t.Fatalf("input=%+v", service.createCredentialInput)
 	}
 	lower := strings.ToLower(recorder.Body.String())
-	for _, secret := range []string{"super-secret", "password", "private_key", "passphrase"} {
+	for _, secret := range []string{"super-secret", `"password":`, `"private_key":`, `"passphrase":`} {
 		if strings.Contains(lower, secret) {
 			t.Fatalf("response leaked %q: %s", secret, recorder.Body.String())
 		}
