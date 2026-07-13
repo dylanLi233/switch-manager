@@ -22,3 +22,12 @@ authentication:
   clock_skew: "30s"
   username_claim: "preferred_username"
   service_actor_claim: "azp"
+
+# Device/Credential API secrets are environment-only and intentionally excluded
+# from this YAML file:
+#   SWITCH_MANAGER_CREDENTIAL_MASTER_KEY_BASE64  (32 random bytes, base64)
+#   SWITCH_MANAGER_CREDENTIAL_KEY_VERSION        (default: v1)
+#   SWITCH_MANAGER_SSH_KNOWN_HOSTS_FILE           (required to enable SSH tests)
+#   SWITCH_MANAGER_SSH_PROMPT_PATTERN             (verified vendor prompt regex)
+#   SWITCH_MANAGER_SSH_PROMPT_FAMILY              (label returned by test-connection)
+#   SWITCH_MANAGER_SSH_TEST_TIMEOUT                (default: 10s)
