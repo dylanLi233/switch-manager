@@ -32,8 +32,7 @@ func (h *InterfaceHandlers) Register(mux *http.ServeMux, authenticator Authentic
 	}
 	register("GET /api/v1/switches/{switchID}/interfaces", auth.PermissionOperationQuery, h.list)
 	register("GET /api/v1/switches/{switchID}/interfaces/{interfaceName}", auth.PermissionOperationQuery, h.get)
-	register("POST /api/v1/switches/{switchID}/interfaces/{interfaceName}:enable", auth.PermissionOperationConfig, h.enable)
-	register("POST /api/v1/switches/{switchID}/interfaces/{interfaceName}:disable", auth.PermissionOperationConfig, h.disable)
+	register("POST /api/v1/switches/{switchID}/interfaces/{interfaceAction}", auth.PermissionOperationConfig, h.adminAction)
 	register("PUT /api/v1/switches/{switchID}/interfaces/{interfaceName}/access", auth.PermissionOperationConfig, h.access)
 	register("PUT /api/v1/switches/{switchID}/interfaces/{interfaceName}/trunk", auth.PermissionOperationConfig, h.trunk)
 	register("POST /api/v1/switches/{switchID}/interfaces/{interfaceName}/vlans", auth.PermissionOperationConfig, h.addVLAN)
@@ -52,12 +51,22 @@ func (h *InterfaceHandlers) get(w http.ResponseWriter, r *http.Request) error {
 	return h.submitAndWrite(w, r, operation.Request{Name: pluginOperation(pluginapi.OperationInterfaceGet), Class: operation.ClassQuery, DeviceID: r.PathValue("switchID"), Parameters: map[string]any{"interface_name": name}, ExecutionMode: operation.ExecutionModeSync}, operation.ExecutionModeSync)
 }
 
-func (h *InterfaceHandlers) enable(w http.ResponseWriter, r *http.Request) error {
-	return h.adminState(w, r, pluginapi.OperationInterfaceEnable)
-}
-
-func (h *InterfaceHandlers) disable(w http.ResponseWriter, r *http.Request) error {
-	return h.adminState(w, r, pluginapi.OperationInterfaceDisable)
+func (h *InterfaceHandlers) adminAction(w http.ResponseWriter, r *http.Request) error {
+	action := r.PathValue("interfaceAction")
+	var operationName pluginapi.OperationName
+	var name string
+	switch {
+	case strings.HasSuffix(action, ":enable"):
+		name = strings.TrimSuffix(action, ":enable")
+		operationName = pluginapi.OperationInterfaceEnable
+	case strings.HasSuffix(action, ":disable"):
+		name = strings.TrimSuffix(action, ":disable")
+		operationName = pluginapi.OperationInterfaceDisable
+	default:
+		return apperror.New(apperror.CodeResourceNotFound, "")
+	}
+	r.SetPathValue("interfaceName", name)
+	return h.adminState(w, r, operationName)
 }
 
 func (h *InterfaceHandlers) adminState(w http.ResponseWriter, r *http.Request, name pluginapi.OperationName) error {
