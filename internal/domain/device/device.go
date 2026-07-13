@@ -4,6 +4,7 @@ package device
 import (
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 )
@@ -107,6 +108,38 @@ type Device struct {
 	UpdatedAt       time.Time
 }
 
+// ValidateHost accepts an IP literal or a conservative DNS hostname. URL,
+// path, whitespace, and host:port forms are deliberately rejected because the
+// port is stored separately.
+func ValidateHost(host string) error {
+	value := strings.TrimSpace(host)
+	if value == "" {
+		return errors.New("device host is required")
+	}
+	if value != host || len(value) > 253 || strings.ContainsAny(value, " \t\r\n/\\") || strings.Contains(value, "://") {
+		return errors.New("device host is invalid")
+	}
+	if net.ParseIP(value) != nil {
+		return nil
+	}
+	value = strings.TrimSuffix(value, ".")
+	if value == "" {
+		return errors.New("device host is invalid")
+	}
+	for _, label := range strings.Split(value, ".") {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return errors.New("device host is invalid")
+		}
+		for _, character := range label {
+			if (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') || (character >= '0' && character <= '9') || character == '-' {
+				continue
+			}
+			return errors.New("device host is invalid")
+		}
+	}
+	return nil
+}
+
 // Validate enforces device invariants independent of persistence.
 func (d Device) Validate() error {
 	if strings.TrimSpace(d.ID) == "" {
@@ -115,8 +148,8 @@ func (d Device) Validate() error {
 	if strings.TrimSpace(d.Name) == "" {
 		return errors.New("device name is required")
 	}
-	if strings.TrimSpace(d.Host) == "" {
-		return errors.New("device host is required")
+	if err := ValidateHost(d.Host); err != nil {
+		return err
 	}
 	if d.SSHPort < 1 || d.SSHPort > 65535 {
 		return fmt.Errorf("SSH port %d is outside 1-65535", d.SSHPort)
