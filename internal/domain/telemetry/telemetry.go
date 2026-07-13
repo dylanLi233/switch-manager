@@ -30,11 +30,11 @@ func (t MACEntryType) Validate() error {
 }
 
 type MACEntry struct {
-	MACAddress   string       `json:"mac_address"`
-	VLANID       int          `json:"vlan_id"`
-	InterfaceName string      `json:"interface_name"`
-	EntryType    MACEntryType `json:"entry_type"`
-	AgeSeconds   int64        `json:"age_seconds"`
+	MACAddress    string       `json:"mac_address"`
+	VLANID        int          `json:"vlan_id"`
+	InterfaceName string       `json:"interface_name"`
+	EntryType     MACEntryType `json:"entry_type"`
+	AgeSeconds    int64        `json:"age_seconds"`
 }
 
 func NormalizeMACEntry(value MACEntry) (MACEntry, error) {
@@ -90,6 +90,9 @@ func NormalizeARPEntry(value ARPEntry) (ARPEntry, error) {
 	if err != nil {
 		return ARPEntry{}, fmt.Errorf("invalid ARP IP address: %w", err)
 	}
+	if !address.Is4() {
+		return ARPEntry{}, errors.New("ARP IP address must be IPv4; IPv6 neighbor discovery is a separate capability")
+	}
 	if address.IsUnspecified() || address.IsMulticast() {
 		return ARPEntry{}, errors.New("ARP IP address cannot be unspecified or multicast")
 	}
@@ -136,14 +139,14 @@ func (s HealthState) Validate() error {
 }
 
 type DeviceStatus struct {
-	Hostname             string      `json:"hostname"`
-	UptimeSeconds        int64       `json:"uptime_seconds"`
-	HealthState          HealthState `json:"health_state"`
-	CPUUsagePercent      *float64    `json:"cpu_usage_percent,omitempty"`
-	MemoryUsagePercent   *float64    `json:"memory_usage_percent,omitempty"`
-	TemperatureCelsius   *float64    `json:"temperature_celsius,omitempty"`
-	ActiveAlarms         []string    `json:"active_alarms"`
-	CollectedAt          time.Time   `json:"collected_at"`
+	Hostname           string      `json:"hostname"`
+	UptimeSeconds      int64       `json:"uptime_seconds"`
+	HealthState        HealthState `json:"health_state"`
+	CPUUsagePercent    *float64    `json:"cpu_usage_percent,omitempty"`
+	MemoryUsagePercent *float64    `json:"memory_usage_percent,omitempty"`
+	TemperatureCelsius *float64    `json:"temperature_celsius,omitempty"`
+	ActiveAlarms       []string    `json:"active_alarms"`
+	CollectedAt        time.Time   `json:"collected_at"`
 }
 
 func NormalizeDeviceStatus(value DeviceStatus) (DeviceStatus, error) {
