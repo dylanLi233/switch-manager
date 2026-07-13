@@ -29,7 +29,6 @@ import (
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
-// App owns process-level dependencies and server lifecycle.
 type App struct {
 	cfg        config.Config
 	logger     *slog.Logger
@@ -38,7 +37,6 @@ type App struct {
 	dispatcher *scheduler.Scheduler
 }
 
-// New validates configuration and wires optional database-backed services.
 func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, error) {
 	if ctx == nil {
 		return nil, errors.New("bootstrap context is required")
@@ -56,6 +54,10 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	fakeConfig, err := config.LoadFakeRuntimeEnvironment(os.LookupEnv)
 	if err != nil {
 		return nil, fmt.Errorf("load fake runtime configuration: %w", err)
+	}
+	queryLimits, err := config.LoadQueryLimits(os.LookupEnv)
+	if err != nil {
+		return nil, fmt.Errorf("load query limits: %w", err)
 	}
 	if inventoryConfig.Enabled && !cfg.Authentication.Enabled {
 		return nil, errors.New("inventory API requires authentication to be enabled")
@@ -212,7 +214,12 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 			app.Close()
 			return nil, fmt.Errorf("initialize route and ACL handlers: %w", err)
 		}
-		registrars = append(registrars, vlanHandlers, interfaceHandlers, routeACLHandlers)
+		telemetryHandlers, err := httpserver.NewTelemetryHandlers(operationService, queryLimits.ResultLimit)
+		if err != nil {
+			app.Close()
+			return nil, fmt.Errorf("initialize telemetry handlers: %w", err)
+		}
+		registrars = append(registrars, vlanHandlers, interfaceHandlers, routeACLHandlers, telemetryHandlers)
 		app.dispatcher = dispatcher
 	}
 
@@ -227,7 +234,6 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*App, err
 	return app, nil
 }
 
-// Close releases process-level dependencies. It is safe to call repeatedly.
 func (a *App) Close() {
 	if a != nil && a.store != nil {
 		a.store.Close()
@@ -235,7 +241,6 @@ func (a *App) Close() {
 	}
 }
 
-// Run listens and serves until context cancellation or a component fails.
 func (a *App) Run(ctx context.Context) error {
 	defer a.Close()
 	listener, err := net.Listen("tcp", a.cfg.Server.Listen)
