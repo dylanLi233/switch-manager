@@ -154,7 +154,11 @@ func decodeRuntimeTableQuery(encoded string) (runtimeTableQuery, error) {
 }
 
 func cloneStatus(value telemetry.DeviceStatus) telemetry.DeviceStatus {
-	value.ActiveAlarms = append([]string(nil), value.ActiveAlarms...)
+	if value.ActiveAlarms != nil {
+		alarms := make([]string, len(value.ActiveAlarms))
+		copy(alarms, value.ActiveAlarms)
+		value.ActiveAlarms = alarms
+	}
 	if value.CPUUsagePercent != nil {
 		copy := *value.CPUUsagePercent
 		value.CPUUsagePercent = &copy
