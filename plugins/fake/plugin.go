@@ -31,7 +31,7 @@ func New(vendor pluginapi.Vendor) (*Plugin, error) {
 func (p *Plugin) Metadata() pluginapi.Metadata {
 	return pluginapi.Metadata{
 		Name: "fake-" + strings.ToLower(string(p.vendor)), Vendor: p.vendor,
-		PluginVersion: pluginapi.Version{Major: 1, Minor: 4, Patch: 0},
+		PluginVersion: pluginapi.Version{Major: 1, Minor: 5, Patch: 0},
 		SDKVersion: pluginapi.CurrentSDKVersion(),
 		Operations: []pluginapi.OperationName{
 			OperationEchoQuery, OperationEchoConfig, OperationSaveConfig,
@@ -41,6 +41,7 @@ func (p *Plugin) Metadata() pluginapi.Metadata {
 			pluginapi.OperationRouteList, pluginapi.OperationRouteGet, pluginapi.OperationRouteCreate, pluginapi.OperationRouteUpdate, pluginapi.OperationRouteDelete,
 			pluginapi.OperationACLList, pluginapi.OperationACLGet, pluginapi.OperationACLCreate, pluginapi.OperationACLUpdate, pluginapi.OperationACLDelete,
 			pluginapi.OperationMACTableList, pluginapi.OperationARPTableList, pluginapi.OperationDeviceStatusGet,
+			pluginapi.OperationCommandExecuteReadonly, pluginapi.OperationCommandExecuteConfig,
 		},
 	}
 }
@@ -81,6 +82,7 @@ func (p *Plugin) BuildPlan(ctx context.Context, request pluginapi.PlanRequest) (
 	if err != nil { return pluginapi.ExecutionPlan{}, err }
 	capability, exists := capabilities.Lookup(request.Operation)
 	if !exists || capability.Level == pluginapi.SupportUnsupported { return pluginapi.ExecutionPlan{}, pluginapi.NewError(pluginapi.ErrorUnsupportedOperation, "operation is not supported for the fake device") }
+	if isCustomCommand(request.Operation) { return p.buildCustomCommandPlan(request) }
 
 	commandText, risk, enterConfig := "", pluginapi.RiskLow, false
 	switch request.Operation {
@@ -159,7 +161,13 @@ func (p *Plugin) ParseResult(_ context.Context, plan pluginapi.ExecutionPlan, tr
 			}
 			result.Data = data
 		} else {
-			outputs := make([]string, 0, len(transcript.Commands)); for _, record := range transcript.Commands { outputs = append(outputs, record.Output) }; result.Data = map[string]any{"outputs": outputs}
+			outputs := make([]string, 0, len(transcript.Commands)); for _, record := range transcript.Commands { outputs = append(outputs, record.Output) }
+			data := map[string]any{"outputs": outputs}
+			if isCustomCommand(plan.Operation) {
+				converted := make([]any, len(outputs)); for index, output := range outputs { converted[index] = output }
+				if err := validateCustomCommandOutput(plan, map[string]any{"outputs": converted}); err != nil { return pluginapi.OperationResult{}, pluginapi.WrapError(pluginapi.ErrorOutputUnparsable, "fake custom command output is invalid", err) }
+			}
+			result.Data = data
 		}
 	}
 	if err := result.Validate(); err != nil { return pluginapi.OperationResult{}, pluginapi.WrapError(pluginapi.ErrorOutputUnparsable, "fake normalized result is invalid", err) }

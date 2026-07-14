@@ -31,6 +31,9 @@ const (
 	OperationMACTableList    OperationName = "mac_table.list"
 	OperationARPTableList    OperationName = "arp_table.list"
 	OperationDeviceStatusGet OperationName = "device_status.get"
+
+	OperationCommandExecuteReadonly OperationName = "command.execute_readonly"
+	OperationCommandExecuteConfig   OperationName = "command.execute_config"
 )
 
 // InterfaceNameValidator is an optional plugin extension. Interface syntax is
